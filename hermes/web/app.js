@@ -1043,8 +1043,8 @@ const App = {
           <div class="cap-group-h">${esc(g)}</div>
           ${ts.map(t => `<div class="cap">
             <div style="min-width:0">
-              <div class="cap-n">${esc(t.name)} <span class="danger-tag dg-${esc(t.danger)}">${esc(t.danger)}</span></div>
-              <div class="cap-d">${esc(t.desc)}</div>
+              <div class="cap-n">${esc(t.name)} <span class="danger-tag dg-${esc(t.danger)}">${esc(t.danger)}</span>${t.human_only ? ` <span class="danger-tag dg-human">you approve</span>` : ''}</div>
+              <div class="cap-d">${esc(t.desc)}${t.human_only ? ` <b>Allow only means this agent has the tool — every message still waits for you, at every autonomy level.</b>` : ''}</div>
             </div>
             <div class="cap-right"><div class="seg" data-tool="${esc(t.name)}">
               ${['allow', 'ask', 'deny'].map(m => `<button data-m="${m}" class="${(grants[t.name] || 'deny') === m ? 'on' : ''}" onclick="App.setGrant(this)">${m}</button>`).join('')}

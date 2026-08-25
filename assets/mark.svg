@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="Hermes">
+  <defs>
+    <linearGradient id="m-gold" x1="0" y1="0" x2="0.6" y2="1">
+      <stop offset="0%" stop-color="#FFE6A8"/>
+      <stop offset="45%" stop-color="#F5B93B"/>
+      <stop offset="100%" stop-color="#B87A14"/>
+    </linearGradient>
+    <linearGradient id="m-wing" x1="0" y1="0" x2="1" y2="0.7">
+      <stop offset="0%" stop-color="#A8B3FF"/>
+      <stop offset="55%" stop-color="#5C6CF2"/>
+      <stop offset="100%" stop-color="#323FB0"/>
+    </linearGradient>
+    <radialGradient id="m-glow" cx="0.5" cy="0.42" r="0.62">
+      <stop offset="0%" stop-color="#5C6CF2" stop-opacity="0.30"/>
+      <stop offset="60%" stop-color="#5C6CF2" stop-opacity="0.07"/>
+      <stop offset="100%" stop-color="#5C6CF2" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="m-plate" x1="0" y1="0" x2="0.4" y2="1">
+      <stop offset="0%" stop-color="#161B36"/>
+      <stop offset="100%" stop-color="#080B18"/>
+    </linearGradient>
+
+    <!-- one wing, drawn once, mirrored for the other side -->
+    <g id="m-wing-shape">
+      <path d="M0 0 C13 -7 30 -10 45 -6 C31 1 14 4 0 3 Z" fill="url(#m-wing)"/>
+      <path d="M-0.5 7 C11 1.5 26 0 39 4 C26 9.5 12 11.5 -0.5 10.5 Z" fill="url(#m-wing)" opacity="0.78"/>
+      <path d="M-1 14 C9 9.5 21 9 32 12.5 C21 17 10 18.5 -1 17.5 Z" fill="url(#m-wing)" opacity="0.54"/>
+      <path d="M-1.5 20.5 C6.5 17.5 15 17.5 23 20 C15 23 7 24 -1.5 23.5 Z" fill="url(#m-wing)" opacity="0.32"/>
+    </g>
+  </defs>
+
+  <rect width="128" height="128" rx="28" fill="url(#m-plate)"/>
+  <rect width="128" height="128" rx="28" fill="url(#m-glow)"/>
+  <rect x="0.75" y="0.75" width="126.5" height="126.5" rx="27.25" fill="none" stroke="#F5B93B" stroke-opacity="0.20"/>
+
+  <!-- wings, swept back from the staff -->
+  <g transform="translate(64,46)">
+    <g transform="translate(11,0) rotate(-9)"><use href="#m-wing-shape"/></g>
+    <g transform="translate(-11,0) rotate(9) scale(-1,1)"><use href="#m-wing-shape"/></g>
+  </g>
+
+  <!-- the H, read as a caduceus staff: two rails and a crossbar -->
+  <g>
+    <rect x="45.5" y="30" width="9" height="66" rx="4.5" fill="url(#m-gold)"/>
+    <rect x="73.5" y="30" width="9" height="66" rx="4.5" fill="url(#m-gold)"/>
+    <rect x="45.5" y="58.5" width="37" height="9" rx="4.5" fill="url(#m-gold)"/>
+    <!-- highlight down the left rail so the gold reads as metal, not paint -->
+    <rect x="47" y="33" width="2.5" height="60" rx="1.25" fill="#FFF0C4" opacity="0.42"/>
+  </g>
+
+  <!-- beacon above, contact point below -->
+  <circle cx="64" cy="24" r="6" fill="url(#m-gold)"/>
+  <circle cx="64" cy="24" r="2.4" fill="#FFF6DC" opacity="0.9"/>
+  <circle cx="64" cy="102" r="4" fill="#4FD1A5"/>
+  <circle cx="64" cy="102" r="8.5" fill="none" stroke="#4FD1A5" stroke-opacity="0.35"/>
+</svg>

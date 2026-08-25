@@ -106,10 +106,25 @@ def t_search_files(agent, args, ctx):
     root = _safe_path(agent, args.get("path", "."))
     needle = args["query"].lower()
     hits = []
+    skipped = 0
+
+    def _footer(body):
+        note = (f"\n[{skipped} protected file(s) skipped — credential and key material is "
+                "excluded from search the same way it is excluded from read_file]") if skipped else ""
+        return body + note
+
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if not d.startswith((".", "__", "node_modules"))]
         for fn in filenames:
             fp = Path(dirpath) / fn
+            # A grep is a read. Protected material is protected here too, or
+            # the hard floor would only be a floor for one of the two tools
+            # that can put a file's contents in front of the model.
+            try:
+                security.guard_path(fp)
+            except security.SecurityViolation:
+                skipped += 1
+                continue
             try:
                 if fp.stat().st_size > 2_000_000:
                     continue
@@ -117,10 +132,10 @@ def t_search_files(agent, args, ctx):
                     if needle in line.lower():
                         hits.append(f"{fp}:{i}: {line.strip()[:200]}")
                         if len(hits) >= 80:
-                            return "\n".join(hits) + "\n… (truncated at 80 matches)"
+                            return _footer("\n".join(hits) + "\n… (truncated at 80 matches)")
             except (OSError, UnicodeDecodeError):
                 continue
-    return "\n".join(hits) or f"No matches for '{args['query']}' under {root}"
+    return _footer("\n".join(hits) or f"No matches for '{args['query']}' under {root}")
 
 
 def t_run_shell(agent, args, ctx):
@@ -140,17 +155,36 @@ def t_run_shell(agent, args, ctx):
     return f"exit={r.returncode}\n{out}"
 
 
+class _AllowlistedRedirects(urllib.request.HTTPRedirectHandler):
+    """Re-check the allowlist on every hop, not just the first one.
+
+    Checking only the URL the agent typed is checking the wrong thing: a page
+    on an allowed domain can answer with a 302 to anywhere, and the fetch that
+    actually happens is the one at the end of the chain.
+    """
+
+    def __init__(self, agent):
+        self.agent = agent
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        _check_host(self.agent, urllib.parse.urljoin(req.full_url, newurl))
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
 def t_http_fetch(agent, args, ctx):
     url = _check_host(agent, args["url"])
     req = urllib.request.Request(url, headers={"User-Agent": "Hermes-OpenClaw/1.0"})
+    opener = urllib.request.build_opener(_AllowlistedRedirects(agent))
     try:
-        with urllib.request.urlopen(req, timeout=30) as r:
+        with opener.open(req, timeout=30) as r:
             body = r.read(500_000).decode(errors="replace")
+            final = r.geturl()
     except urllib.error.HTTPError as e:
         raise ToolError(f"HTTP {e.code} fetching {url}") from None
     except urllib.error.URLError as e:
         raise ToolError(f"Could not fetch {url}: {e.reason}") from None
-    return security.wrap_untrusted(body[:40_000], f"web page {url}")
+    source = f"web page {final}" if final != url else f"web page {url}"
+    return security.wrap_untrusted(body[:40_000], source)
 
 
 def t_remember(agent, args, ctx):
@@ -225,39 +259,39 @@ def t_finish(agent, args, ctx):
 
 
 SPECS = [
-    {"name": "read_file", "fn": t_read_file, "group": "Filesystem", "danger": "low",
+    {"name": "read_file", "fn": t_read_file, "required": ["path"], "group": "Filesystem", "danger": "low",
      "desc": "Read a text file inside your filesystem scope.",
      "params": {"path": "path to the file"}},
-    {"name": "list_dir", "fn": t_list_dir, "group": "Filesystem", "danger": "low",
+    {"name": "list_dir", "fn": t_list_dir, "required": [], "group": "Filesystem", "danger": "low",
      "desc": "List the contents of a directory.",
      "params": {"path": "directory path (default '.')"}},
-    {"name": "search_files", "fn": t_search_files, "group": "Filesystem", "danger": "low",
+    {"name": "search_files", "fn": t_search_files, "required": ["query"], "group": "Filesystem", "danger": "low",
      "desc": "Recursively grep for text under a directory.",
      "params": {"query": "text to find", "path": "root to search (default '.')"}},
-    {"name": "write_file", "fn": t_write_file, "group": "Filesystem", "danger": "high",
+    {"name": "write_file", "fn": t_write_file, "required": ["path", "content"], "group": "Filesystem", "danger": "high",
      "desc": "Create or overwrite a file. Overwrites without warning.",
      "params": {"path": "path to write", "content": "full file contents"}},
-    {"name": "run_shell", "fn": t_run_shell, "group": "System", "danger": "critical",
+    {"name": "run_shell", "fn": t_run_shell, "required": ["command"], "group": "System", "danger": "critical",
      "desc": "Run a shell command in your working directory.",
      "params": {"command": "the shell command"}},
-    {"name": "http_fetch", "fn": t_http_fetch, "group": "Network", "danger": "medium",
+    {"name": "http_fetch", "fn": t_http_fetch, "required": ["url"], "group": "Network", "danger": "medium",
      "desc": "Fetch a URL and return the response body.",
      "params": {"url": "http(s) URL"}},
-    {"name": "remember", "fn": t_remember, "group": "Memory", "danger": "low",
+    {"name": "remember", "fn": t_remember, "required": ["key", "value"], "group": "Memory", "danger": "low",
      "desc": "Save a durable note you will still have on future tasks.",
      "params": {"key": "short label", "value": "what to remember"}},
-    {"name": "recall", "fn": t_recall, "group": "Memory", "danger": "low",
+    {"name": "recall", "fn": t_recall, "required": [], "group": "Memory", "danger": "low",
      "desc": "List everything you have remembered.", "params": {}},
-    {"name": "delegate", "fn": t_delegate, "group": "Team", "danger": "medium",
+    {"name": "delegate", "fn": t_delegate, "required": ["agent", "title"], "group": "Team", "danger": "medium",
      "desc": "Queue a subtask for a different agent. Does not block you.",
      "params": {"agent": "target agent name", "title": "task title", "brief": "what they must do"}},
-    {"name": "escalate", "fn": t_escalate, "group": "Control", "danger": "low",
+    {"name": "escalate", "fn": t_escalate, "required": ["question"], "group": "Control", "danger": "low",
      "desc": "Ask the operator a question when you are genuinely blocked. Use sparingly.",
      "params": {"reason": "why you are blocked", "question": "the exact question you need answered"}},
-    {"name": "plan", "fn": t_plan, "group": "Control", "danger": "low",
+    {"name": "plan", "fn": t_plan, "required": ["steps"], "group": "Control", "danger": "low",
      "desc": "Split a large objective into steps queued as your own follow-up tasks.",
      "params": {"steps": "list of step titles"}},
-    {"name": "finish", "fn": t_finish, "group": "Control", "danger": "low",
+    {"name": "finish", "fn": t_finish, "required": [], "group": "Control", "danger": "low",
      "desc": "End the task and report your result. Always call this last.",
      "params": {"summary": "your complete answer or report"}},
 ]
@@ -301,6 +335,9 @@ def granted_tools(agent: dict) -> list[dict]:
         out.append({
             "name": s["name"], "group": s["group"], "danger": s["danger"],
             "desc": s["desc"], "params": s["params"], "mode": mode,
+            # The console must not present "allow" as though it removed the
+            # approval step for these — it does not, and cannot.
+            "human_only": security.requires_human(s["name"]),
         })
     return out
 
@@ -332,7 +369,9 @@ def render_tool_docs(agent: dict) -> str:
         mode = grant_of(agent, s["name"])
         if mode == DENY:
             continue
-        params = ", ".join(f'"{k}": <{v}>' for k, v in s["params"].items())
+        required = s.get("required", ())
+        params = ", ".join(f'"{k}": <{v}>' if k in required else f'["{k}": <{v}>]'
+                           for k, v in s["params"].items())
         gate = "  (asks the operator for approval first)" if mode == ASK else ""
         lines.append(f'- {s["name"]}: {s["desc"]}{gate}\n  args: {{{params}}}')
     return "\n".join(lines)
@@ -345,8 +384,22 @@ def execute(agent: dict, tool: str, args: dict, ctx: dict) -> str:
     mode = grant_of(agent, tool)
     if mode == DENY:
         raise Denied(f"Tool '{tool}' is not granted to this agent.")
-    optional = ("path", "brief", "summary", "question", "reason")
-    missing = [k for k in spec["params"] if k not in args and k not in optional]
+
+    # The last gate before anything irreversible leaves the building. The
+    # caller is expected to have obtained a human decision, but this is the
+    # chokepoint every tool call passes through, so the guarantee is enforced
+    # here rather than trusted to whoever is driving the loop.
+    if security.requires_human(tool) and not ctx.get("human_approved"):
+        raise security.SecurityViolation(
+            f"Blocked: '{tool}' is irreversible and outward-facing, so it requires an "
+            "explicit human approval for this specific call. No autonomy level and no "
+            "capability grant can stand in for that.")
+
+    # Each spec names the arguments it genuinely cannot run without. Anything
+    # else in `params` is optional and has a documented default — treating the
+    # whole params dict as mandatory made every tool with an optional argument
+    # impossible for an agent to call.
+    missing = [k for k in spec.get("required", ()) if k not in args]
     if missing:
         raise ToolError(f"Missing required argument(s) for {tool}: {', '.join(missing)}")
 

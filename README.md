@@ -1,17 +1,24 @@
 <div align="center">
 
-<img src="assets/logo.svg" alt="Hermes — Agent Operations Console" width="560">
+<img src="assets/logo.svg" alt="Hermes — Agent Operations Console" width="720">
 
-**Hire AI agents. Give them jobs. Watch them work.**
+<br>
 
-A local-first console for running a team of AI agents that behave like employees —
-they pick up their own queue, do the work, and a quality gate checks it before any
-of them is allowed to call a task finished.
+### Hire AI agents. Give them jobs. Watch them work.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-F5B93B.svg?style=flat-square)](LICENSE)
-[![Python 3.9+](https://img.shields.io/badge/Python-3.9%2B-5C6CF2.svg?style=flat-square)](https://python.org)
-[![Zero dependencies](https://img.shields.io/badge/Dependencies-0-4FD1A5.svg?style=flat-square)](#why-zero-dependencies)
-[![Runs offline](https://img.shields.io/badge/Runs-100%25%20offline-A87CF0.svg?style=flat-square)](#ai-backends)
+A local-first console for running a team of AI agents that behave like employees.<br>
+They pick up their own queue, do the work with real tools, and a quality gate<br>
+checks what they actually did before any of them is allowed to call a task finished.
+
+<br>
+
+[![License](https://img.shields.io/badge/License-MIT-F5B93B?style=for-the-badge&labelColor=0B0E1D)](LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.9%2B-5C6CF2?style=for-the-badge&labelColor=0B0E1D)](https://python.org)
+[![Dependencies](https://img.shields.io/badge/Dependencies-zero-4FD1A5?style=for-the-badge&labelColor=0B0E1D)](#why-zero-dependencies)
+[![Offline](https://img.shields.io/badge/Runs-fully%20offline-A87CF0?style=for-the-badge&labelColor=0B0E1D)](#ai-backends)
+[![Tests](https://img.shields.io/badge/Tests-37%20passing-4FD1A5?style=for-the-badge&labelColor=0B0E1D)](#verification)
+
+**[Install](#install)** · **[What this is](#what-this-actually-is)** · **[The guide](#the-guide)** · **[Security](#security)** · **[Server setup](#running-on-a-server)**
 
 </div>
 
@@ -20,7 +27,7 @@ of them is allowed to call a task finished.
 ## Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/at0m-b0mb/talaria/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/at0m-b0mb/Hermes-Agent-Console/main/install.sh | bash
 ```
 
 Then:
@@ -35,8 +42,8 @@ Your browser opens at `http://localhost:4317`. That's the whole setup.
 <summary><b>Prefer not to pipe a script into bash?</b> (sensible)</summary>
 
 ```bash
-git clone https://github.com/at0m-b0mb/talaria.git
-cd talaria
+git clone https://github.com/at0m-b0mb/Hermes-Agent-Console.git
+cd Hermes-Agent-Console
 ./install.sh          # read it first — it's 140 readable lines
 ```
 
@@ -206,7 +213,8 @@ the agent is never even told it exists.
 Two scopes bound all of it:
 
 - **Filesystem scope** — directories the agent can reach. Default is `~/.hermes/workspace`.
-- **Network allowlist** — domains it may fetch. Empty means any host.
+- **Network allowlist** — domains it may fetch. Empty means any host. Redirects are
+  re-checked on every hop, so an allowed page cannot bounce a fetch somewhere else.
 
 ### 3. Autonomy — how much they do alone
 
@@ -289,7 +297,9 @@ cleverly-worded instruction changes them.
 
 - **23 protected path patterns** — `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.kube`, `.env` files,
   `*.pem`, private keys, keychains, `/etc/shadow`. A fully autonomous agent scoped to your
-  entire home directory still cannot read any of them.
+  entire home directory still cannot read any of them — and cannot reach them through
+  `search_files` either, because a grep is a read. Skipped files are reported in the
+  result, not silently dropped.
 - **18 blocked command patterns** — `rm -rf`, `sudo`, `curl | sh`, disk writes, firewall
   changes, `git push --force`, history tampering, service control.
 - **Hermes' own state is off-limits** — agents cannot read the key vault, session token,
@@ -307,8 +317,11 @@ Hermes handles this in two layers, and the second is the one that counts:
    which are surfaced to you rather than hidden.
 2. **Egress control** — framing can fail; a boundary should not depend on the model
    behaving. So `email_send` is in a hard `ALWAYS_ASK` set. **A human approves every
-   outgoing message at every autonomy level.** An injection can hijack an agent completely
-   and still not get one byte out without you clicking approve.
+   outgoing message at every autonomy level, and at every capability setting.** Granting
+   the tool "allow" only means the agent has it at all; it is not a standing yes to any
+   particular message. The check lives at the single chokepoint every tool call passes
+   through, so it holds no matter what is driving the loop. An injection can hijack an
+   agent completely and still not get one byte out without you clicking approve.
 
 ### Everything else
 
@@ -481,6 +494,9 @@ hermes/
 │   ├── evaluator.py     LLM-as-judge scoring and scorecards
 │   └── bus.py           pub/sub for the live feed
 └── web/                 the console (vanilla JS, no build step)
+
+tests/
+└── test_hermes.py       the suite below
 ```
 
 **Tool calls travel as a text protocol**, not provider-native function calling. That is
@@ -495,6 +511,47 @@ Everything is Python standard library. No pip, no venv, no lockfile, no supply c
 
 The installer cannot fail on a broken wheel because there is nothing to build. On a machine
 that matters, "what is in my dependency tree" has a short answer: nothing.
+
+One of the tests asserts this rather than trusting it — it walks every import in the
+package and fails if any of them is not in the standard library.
+
+---
+
+## Verification
+
+A security claim nobody tests is a security claim that quietly stops being true. The suite
+runs on the standard library too, so there is nothing to install before you can check the
+claims on this page yourself:
+
+```bash
+python3 tests/test_hermes.py
+```
+
+```
+Ran 37 tests in 1.1s
+
+OK
+```
+
+It runs against a throwaway `HERMES_HOME`, so it never touches a real installation. What it
+covers, and why:
+
+| Area | What is asserted |
+|---|---|
+| **Protected paths** | `read_file` *and* `search_files` both refuse `.env`, `*.pem`, keys and Hermes' own state — a grep is a read |
+| **Sandbox** | `../../` traversal, absolute paths and `~` expansion cannot leave the granted scope |
+| **Blocked commands** | the destructive patterns are refused; ordinary commands are not |
+| **Outbound mail** | no autonomy level and no capability grant can send without a human decision on that specific message |
+| **Network allowlist** | an off-allowlist redirect is refused; a same-host redirect still works |
+| **Tool arguments** | optional arguments are genuinely optional, and required ones are reported clearly |
+| **Untrusted content** | injection signals are surfaced; clean text is not falsely flagged |
+| **Redaction** | six key shapes, private-key blocks, and the keys this install actually holds |
+| **Key vault** | encrypt/decrypt round-trips, and tampered ciphertext fails closed |
+| **Audit chain** | an edited row is detected and located; secrets never reach the log |
+| **Autonomy** | levels widen only *when* an agent asks, never *what* it may touch |
+
+Several of these exist because the thing they check was once broken. Those cases are named
+in the test docstrings, so the suite doubles as a record of what has gone wrong before.
 
 ---
 
@@ -539,11 +596,15 @@ more than self-review.
 
 ---
 
-## Why "Talaria"?
+## The three names
 
-The **talaria** were Hermes' winged sandals — the thing that actually made the messenger fast.
-Hermes is the console you use; **OpenClaw** is the runtime underneath; this repository is
-what makes them move.
+They are not decoration — each one is a different layer, and the README uses them precisely.
+
+| Name | What it refers to |
+|---|---|
+| **Hermes** | The console you use, and the command you type. The messenger who actually carries things between parties. |
+| **OpenClaw** | The runtime underneath — the agent loop, the tool sandbox, the quality gate. Swappable; the console does not care which model is behind it. |
+| **Talaria** | Hermes' winged sandals, and the reason the mark has wings. It is the speed, not the messenger. |
 
 ---
 

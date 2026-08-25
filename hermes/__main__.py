@@ -27,6 +27,17 @@ BANNER = rf"""{GOLD}
 """
 
 
+def _seed() -> None:
+    """Put the starter agents in place on first use.
+
+    They used to arrive only when the console or the shell started, so a fresh
+    install answered `hermes run Forge ...` with "no agent named Forge" — the
+    exact command the README opens with.
+    """
+    from .server import seed_if_empty
+    seed_if_empty()
+
+
 def cmd_serve(args) -> int:
     db.init()
     from . import server
@@ -142,6 +153,7 @@ def cmd_key(args) -> int:
 
 def cmd_agents(args) -> int:
     db.init()
+    _seed()
     for a in db.q("SELECT * FROM agents WHERE archived=0 ORDER BY created_at"):
         inv = tools.inventory(a)
         print(f"\n  {a['emoji']} {BOLD}{a['name']}{OFF} {DIM}({a['id']}){OFF}")
@@ -157,6 +169,7 @@ def cmd_agents(args) -> int:
 
 def cmd_run(args) -> int:
     db.init()
+    _seed()
     agent = db.q1("SELECT * FROM agents WHERE (name=? OR id=?) AND archived=0",
                   (args.agent, args.agent))
     if not agent:

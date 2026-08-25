@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  tests:
+    name: tests · python ${{ matrix.python }} · ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python: ["3.9", "3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Compile every module
+        run: python -m compileall -q hermes tests
+
+      - name: Run the suite
+        run: python tests/test_hermes.py
+
+  installer:
+    name: installer · shellcheck + cold install
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: shellcheck
+        run: shellcheck install.sh
+
+      - name: Install from this checkout
+        run: ./install.sh
+
+      - name: The installed copy runs
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          hermes doctor
+          hermes agents
+
+      - name: Install again over the top
+        run: ./install.sh
+
+  piped:
+    name: installer · piped into bash
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # `curl … | bash` leaves BASH_SOURCE unset, which `set -u` turns into a
+      # hard error — the README's headline command used to die on it. Run the
+      # installer the way the README does, from a directory that is not the
+      # checkout, so a regression cannot hide behind the local-install path.
+      - name: BASH_SOURCE must not be an unbound variable
+        run: |
+          cp install.sh /tmp/install.sh
+          cd /tmp
+          out="$(cat /tmp/install.sh | bash 2>&1 || true)"
+          echo "$out"
+          if echo "$out" | grep -qi "unbound variable"; then
+            echo "::error::the piped installer hit an unbound variable"
+            exit 1
+          fi
+          if ! echo "$out" | grep -q "Downloading Hermes"; then
+            echo "::error::piped run did not reach the download step"
+            exit 1
+          fi

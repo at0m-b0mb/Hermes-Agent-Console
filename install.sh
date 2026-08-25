@@ -3,12 +3,12 @@
 #  HERMES — Agent Operations Console
 #  Powered by the OpenClaw runtime
 #
-#  Install:   curl -fsSL https://raw.githubusercontent.com/at0m-b0mb/talaria/main/install.sh | bash
+#  Install:   curl -fsSL https://raw.githubusercontent.com/at0m-b0mb/Hermes-Agent-Console/main/install.sh | bash
 #  Or local:  ./install.sh
 #
 set -euo pipefail
 
-REPO="${HERMES_REPO:-at0m-b0mb/talaria}"
+REPO="${HERMES_REPO:-at0m-b0mb/Hermes-Agent-Console}"
 BRANCH="${HERMES_BRANCH:-main}"
 HOME_DIR="${HERMES_HOME:-$HOME/.hermes}"
 APP_DIR="$HOME_DIR/app"
@@ -47,7 +47,11 @@ find_python() {
 
 # ------------------------------------------------------------- 2. get source
 fetch_source() {
-  local here; here="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || echo "")"
+  local self="${BASH_SOURCE[0]:-}"
+  local here=""
+  if [ -n "$self" ] && [ -f "$self" ]; then
+    here="$(cd "$(dirname "$self")" 2>/dev/null && pwd || echo "")"
+  fi
   if [ -n "$here" ] && [ -d "$here/hermes" ] && [ -f "$here/hermes/__main__.py" ]; then
     say "Installing from this directory."
     rm -rf "$APP_DIR"; mkdir -p "$APP_DIR"

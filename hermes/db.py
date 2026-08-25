@@ -171,6 +171,12 @@ def init() -> None:
     for k, v in config.DEFAULTS.items():
         c.execute("INSERT OR IGNORE INTO settings(key,value) VALUES(?,?)", (k, v))
     c.commit()
+    # The audit chain's schema lives in security.py (which imports this module,
+    # hence the late import). It is created here so that every entry point gets
+    # a complete database — `hermes run` on a fresh install used to reach its
+    # first audited action and fail on a missing table.
+    from . import security
+    security.init_audit()
 
 
 def nid() -> str:

@@ -467,13 +467,20 @@ def run_task(task_id: str) -> str:
             bus.emit("tool_call", {"tool": name, "args": args},
                      run_id=run_id, agent_id=agent["id"])
             mode = tools.grant_of(agent, name)
-            if mode == tools.ASK and workforce.auto_approve(agent, name):
+            # An irreversible outward-facing action is exempt from autonomy AND
+            # from the grant table. Granting it "allow" only means the tool
+            # exists for this agent — it can never stand in for a human saying
+            # yes to this particular send. Only DENY still wins, because DENY
+            # removes the tool outright.
+            gate = tools.ASK if (security.requires_human(name) and mode != tools.DENY) else mode
+            human_approved = False
+            if gate == tools.ASK and workforce.auto_approve(agent, name):
                 security.audit(agent["name"], "tool.auto_approved",
                                {"tool": name, "autonomy": agent.get("autonomy"),
                                 "run_id": run_id})
                 bus.emit("auto_approved", {"tool": name, "autonomy": agent.get("autonomy")},
                          run_id=run_id, agent_id=agent["id"])
-            elif mode == tools.ASK:
+            elif gate == tools.ASK:
                 if not _await_approval(run_id, agent, name, args):
                     observation = (f"DENIED: the operator refused permission to run '{name}'. "
                                    "Do not retry it. Find another way or call finish explaining "
@@ -483,9 +490,12 @@ def run_task(task_id: str) -> str:
                     messages.append({"role": "user", "content": observation})
                     transcript.append({"role": "tool", "tool": name, "content": observation})
                     continue
+                human_approved = True
 
             try:
-                observation = tools.execute(agent, name, args, {"task_id": task_id, "run_id": run_id})
+                observation = tools.execute(agent, name, args,
+                                            {"task_id": task_id, "run_id": run_id,
+                                             "human_approved": human_approved})
                 ok = True
             except security.SecurityViolation as e:
                 observation, ok = f"SECURITY BLOCK: {e}", False

@@ -1,29 +1,106 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 160" width="560" height="160" role="img" aria-label="Hermes — Agent Operations Console">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 240" width="880" height="240" role="img" aria-label="Hermes — Agent Operations Console, on the OpenClaw runtime">
   <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#FFD98A"/><stop offset="50%" stop-color="#F5B93B"/><stop offset="100%" stop-color="#C98A1C"/>
+    <linearGradient id="l-gold" x1="0" y1="0" x2="0.55" y2="1">
+      <stop offset="0%" stop-color="#FFE6A8"/>
+      <stop offset="45%" stop-color="#F5B93B"/>
+      <stop offset="100%" stop-color="#B87A14"/>
     </linearGradient>
-    <linearGradient id="w" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#7C8BFF"/><stop offset="100%" stop-color="#4C5BD4"/>
+    <linearGradient id="l-word" x1="0" y1="0" x2="0.25" y2="1">
+      <stop offset="0%" stop-color="#FFEFC4"/>
+      <stop offset="52%" stop-color="#F5B93B"/>
+      <stop offset="100%" stop-color="#D9982A"/>
     </linearGradient>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#11142A"/><stop offset="100%" stop-color="#090B16"/>
+    <linearGradient id="l-wing" x1="0" y1="0" x2="1" y2="0.7">
+      <stop offset="0%" stop-color="#A8B3FF"/>
+      <stop offset="55%" stop-color="#5C6CF2"/>
+      <stop offset="100%" stop-color="#323FB0"/>
     </linearGradient>
+    <linearGradient id="l-plate" x1="0" y1="0" x2="0.55" y2="1">
+      <stop offset="0%" stop-color="#141931"/>
+      <stop offset="55%" stop-color="#0B0E1D"/>
+      <stop offset="100%" stop-color="#06080F"/>
+    </linearGradient>
+    <radialGradient id="l-glow" cx="0.155" cy="0.5" r="0.42">
+      <stop offset="0%" stop-color="#5C6CF2" stop-opacity="0.34"/>
+      <stop offset="55%" stop-color="#5C6CF2" stop-opacity="0.08"/>
+      <stop offset="100%" stop-color="#5C6CF2" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="l-rule" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#F5B93B" stop-opacity="0.85"/>
+      <stop offset="55%" stop-color="#5C6CF2" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#4FD1A5" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="l-fade" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#5C6CF2" stop-opacity="0.16"/>
+      <stop offset="100%" stop-color="#5C6CF2" stop-opacity="0"/>
+    </linearGradient>
+
+    <g id="l-wing-shape">
+      <path d="M0 0 C13 -7 30 -10 45 -6 C31 1 14 4 0 3 Z" fill="url(#l-wing)"/>
+      <path d="M-0.5 7 C11 1.5 26 0 39 4 C26 9.5 12 11.5 -0.5 10.5 Z" fill="url(#l-wing)" opacity="0.78"/>
+      <path d="M-1 14 C9 9.5 21 9 32 12.5 C21 17 10 18.5 -1 17.5 Z" fill="url(#l-wing)" opacity="0.54"/>
+      <path d="M-1.5 20.5 C6.5 17.5 15 17.5 23 20 C15 23 7 24 -1.5 23.5 Z" fill="url(#l-wing)" opacity="0.32"/>
+    </g>
   </defs>
-  <rect width="560" height="160" rx="16" fill="url(#bg)"/>
-  <circle cx="70" cy="80" r="58" fill="#5C6CF2" opacity="0.07"/>
-  <g transform="translate(38,32) scale(1.85)">
-    <path d="M6 15 L2 19 L6 23 L13 19 Z" fill="url(#w)" opacity=".85"/>
-    <path d="M42 15 L46 19 L42 23 L35 19 Z" fill="url(#w)" opacity=".85"/>
-    <path d="M9 25 L4 28 L9 31 L15 28 Z" fill="url(#w)" opacity=".5"/>
-    <path d="M39 25 L44 28 L39 31 L33 28 Z" fill="url(#w)" opacity=".5"/>
-    <rect x="15" y="8" width="4.5" height="32" rx="2.2" fill="url(#g)"/>
-    <rect x="28.5" y="8" width="4.5" height="32" rx="2.2" fill="url(#g)"/>
-    <rect x="15" y="21.5" width="18" height="4.5" rx="2.2" fill="url(#g)"/>
-    <circle cx="24" cy="6" r="3" fill="url(#g)"/>
-    <circle cx="24" cy="42" r="2" fill="url(#w)"/>
+
+  <rect width="880" height="240" rx="24" fill="url(#l-plate)"/>
+  <rect width="880" height="240" rx="24" fill="url(#l-glow)"/>
+
+  <!-- faint console ruling, so the plate reads as a screen rather than a card -->
+  <g stroke="#5C6CF2" stroke-opacity="0.055">
+    <path d="M0 60 H880 M0 120 H880 M0 180 H880"/>
+    <path d="M300 0 V240 M420 0 V240 M540 0 V240 M660 0 V240 M780 0 V240"/>
   </g>
-  <text x="160" y="76" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="42" font-weight="700" letter-spacing="7" fill="url(#g)">HERMES</text>
-  <text x="163" y="102" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="13" letter-spacing="3.4" fill="#6E76A8">AGENT OPERATIONS CONSOLE</text>
-  <text x="163" y="124" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="11.5" fill="#4FD1A5">▸ powered by the OpenClaw runtime</text>
+  <rect width="880" height="240" rx="24" fill="none" stroke="#F5B93B" stroke-opacity="0.16"/>
+
+  <!-- ── mark ───────────────────────────────────────────────────────────── -->
+  <g transform="translate(64,44)">
+    <rect x="-8" y="-8" width="152" height="168" rx="26" fill="url(#l-fade)"/>
+    <g transform="translate(68,58)">
+      <g transform="translate(12,0) rotate(-9)"><use href="#l-wing-shape"/></g>
+      <g transform="translate(-12,0) rotate(9) scale(-1,1)"><use href="#l-wing-shape"/></g>
+    </g>
+    <rect x="47" y="40" width="10" height="76" rx="5" fill="url(#l-gold)"/>
+    <rect x="79" y="40" width="10" height="76" rx="5" fill="url(#l-gold)"/>
+    <rect x="47" y="73" width="42" height="10" rx="5" fill="url(#l-gold)"/>
+    <rect x="48.7" y="43.5" width="2.8" height="69" rx="1.4" fill="#FFF0C4" opacity="0.42"/>
+    <circle cx="68" cy="32" r="6.8" fill="url(#l-gold)"/>
+    <circle cx="68" cy="32" r="2.7" fill="#FFF6DC" opacity="0.9"/>
+    <circle cx="68" cy="124" r="4.4" fill="#4FD1A5"/>
+    <circle cx="68" cy="124" r="9.5" fill="none" stroke="#4FD1A5" stroke-opacity="0.35"/>
+  </g>
+
+  <!-- ── wordmark ───────────────────────────────────────────────────────── -->
+  <text x="248" y="112" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif"
+        font-size="66" font-weight="800" letter-spacing="9.5" fill="url(#l-word)">HERMES</text>
+
+  <rect x="250" y="130" width="470" height="1.6" fill="url(#l-rule)"/>
+
+  <text x="251" y="160" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif"
+        font-size="15.5" font-weight="600" letter-spacing="5.2" fill="#8A93C8">AGENT OPERATIONS CONSOLE</text>
+
+  <text x="251" y="192" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"
+        font-size="13.5" fill="#4FD1A5">▸</text>
+  <text x="269" y="192" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"
+        font-size="13.5" fill="#6E77AA">on the</text>
+  <text x="325" y="192" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"
+        font-size="13.5" fill="#9AA3D8">OpenClaw</text>
+  <text x="399" y="192" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"
+        font-size="13.5" fill="#6E77AA">runtime</text>
+
+  <!-- status cluster, right-aligned so nothing clips at the plate edge -->
+  <g transform="translate(832,52)" text-anchor="end">
+    <text x="-16" y="4.5" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"
+          font-size="12" letter-spacing="1.6" fill="#5E6798">LOCAL · OFFLINE-CAPABLE</text>
+    <circle cx="0" cy="0" r="3.6" fill="#4FD1A5"/>
+    <circle cx="0" cy="0" r="7.5" fill="none" stroke="#4FD1A5" stroke-opacity="0.3"/>
+  </g>
+  <rect x="638" y="74" width="194" height="1" fill="#5C6CF2" fill-opacity="0.16"/>
+  <g transform="translate(832,94)" text-anchor="end"
+     font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"
+     font-size="11.5" letter-spacing="1.2" fill="#4A5285">
+    <text x="0" y="0">0 DEPENDENCIES</text>
+    <text x="0" y="19">PYTHON 3.9+</text>
+    <text x="0" y="38">MIT LICENSED</text>
+  </g>
 </svg>

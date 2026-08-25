@@ -1,0 +1,83 @@
+# Changelog
+
+All notable changes to Hermes are recorded here.
+This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [1.0.0] — 2026-08-25
+
+First public release.
+
+### The console
+
+- **Agents that own a queue.** A dispatcher hands queued work to whoever is free
+  and on shift. Nobody presses Run.
+- **A quality gate before any task is called done.** A second model checks whether
+  the work was performed or merely described, and sends it back with the specific
+  gap named when it was not.
+- **Three starter agents** — Atlas (research), Forge (code), Ledger (files) — plus
+  eight hireable templates, each arriving with a job description, granted tools and
+  its own standing duties.
+- **Two front ends on one engine** — a graphical console at `localhost:4317` with a
+  live SSE activity feed, and `hermes shell` for SSH sessions with no browser.
+- **Six AI backends** — Ollama, Groq, Gemini, Anthropic, OpenAI, and any
+  OpenAI-compatible endpoint. Chosen per agent, so a cheap local model can do the
+  routine work and a strong one the hard jobs.
+- **Runs fully offline.** With Ollama and no API key, every feature works.
+- **Standing duties, escalation and retries** — recurring work is created when it
+  comes due; a stuck agent asks you a question instead of failing silently; failed
+  tasks retry with the error fed back.
+- **Scoring** — an LLM judge grades correctness, completeness, efficiency and safety;
+  your own 0–100 rating always overrides it.
+- **Zero third-party dependencies.** Python standard library only, asserted by a test
+  that walks every import in the package.
+
+### Security
+
+- Hard floor enforced in code, not in a prompt: 23 protected path patterns, 18 blocked
+  command patterns, and Hermes' own vault, token and database off-limits to agents.
+- Untrusted content from web pages and email is framed as data and scanned for
+  injection patterns, which are surfaced rather than hidden.
+- `email_send` requires a human decision on that specific message at every autonomy
+  level and every capability setting.
+- Token auth with rate-limited lockout, loopback-only binding by default, an encrypted
+  key vault, secret redaction, spend ceilings, and a hash-linked tamper-evident audit
+  chain.
+
+### Fixed before release
+
+Found while auditing the first cut of the code. Each has a test that fails without
+the fix.
+
+- **`search_files` could read files `read_file` refused.** An agent scoped to a
+  directory containing `.env` files, `*.pem` keys or private keys could pull their
+  contents out 200 characters at a time through the grep tool, which never consulted
+  the protected-path guard. A grep is a read; it now goes through the same guard, and
+  reports how many files it skipped rather than dropping them silently.
+- **A capability grant of `allow` bypassed the human-approval requirement for
+  `email_send`.** Autonomy correctly refused to auto-approve it, but the agent loop
+  only consulted autonomy when the grant was `ask` — setting the tool to `allow` in
+  the console skipped the gate entirely and sent without asking. The requirement is
+  now enforced at the single chokepoint every tool call passes through, so no grant,
+  autonomy level or caller can stand in for a human.
+- **The network allowlist was checked only on the first hop.** A page on an allowed
+  domain could answer with a redirect to any host and the fetch would follow it. Every
+  hop is now re-checked against the allowlist.
+- **Optional tool arguments were treated as required**, which made most of the email
+  tools impossible for an agent to call: `email_list` demanded `folder`, `limit` and
+  `unread_only`; every non-reply `email_send` was rejected for a missing `in_reply_to`.
+  Each tool now declares the arguments it genuinely needs, and the manual shown to the
+  model marks the rest as optional.
+- **`hermes run` crashed on a fresh install.** The audit table was created by the
+  server and the shell but not by the CLI, so the first audited action hit a missing
+  table. `db.init()` now produces a complete database for every entry point.
+- **`hermes run` and `hermes agents` found no agents on a fresh install.** The starter
+  agents were seeded only when the console or shell started, so the first command in
+  the README answered "no agent named Forge". Both now seed on first use.
+- **The installer died when piped into bash.** `curl … | bash` leaves `BASH_SOURCE`
+  unset, and `set -u` turns that into a hard error — breaking the one command the
+  README leads with. It also meant the "install from this directory" branch keyed off
+  the current working directory rather than the script's own location. The script now
+  requires a real file on disk before taking that branch. A CI job runs the installer
+  through a pipe on every push.
+
+[1.0.0]: https://github.com/at0m-b0mb/Hermes-Agent-Console/releases/tag/v1.0.0
