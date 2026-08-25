@@ -3,12 +3,12 @@
 #  HERMES — Agent Operations Console
 #  Powered by the OpenClaw runtime
 #
-#  Install:   curl -fsSL https://raw.githubusercontent.com/at0m-b0mb/hermes-console/main/install.sh | bash
+#  Install:   curl -fsSL https://raw.githubusercontent.com/at0m-b0mb/talaria/main/install.sh | bash
 #  Or local:  ./install.sh
 #
 set -euo pipefail
 
-REPO="${HERMES_REPO:-at0m-b0mb/hermes-console}"
+REPO="${HERMES_REPO:-at0m-b0mb/talaria}"
 BRANCH="${HERMES_BRANCH:-main}"
 HOME_DIR="${HERMES_HOME:-$HOME/.hermes}"
 APP_DIR="$HOME_DIR/app"
