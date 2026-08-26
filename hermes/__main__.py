@@ -6,6 +6,7 @@ import getpass
 import json
 import sys
 import threading
+import time
 import webbrowser
 
 from . import __engine__, __version__, config, db, providers, security
@@ -167,6 +168,53 @@ def cmd_agents(args) -> int:
     return 0
 
 
+def _approvals_on_the_terminal(pending, done, args) -> None:
+    """Ask for approvals here rather than sending the operator to the console.
+
+    A supervised agent asks before every write, so `hermes run` used to sit in
+    silence for the full fifteen-minute approval timeout with no way to say yes
+    — the console was the only place a decision could be made. This is the same
+    prompt the interactive shell already used.
+    """
+    auto = getattr(args, "yes", False)
+    while not done.is_set():
+        time.sleep(0.25)
+        if not pending:
+            continue
+        p = pending.pop(0)
+        row = db.q1("SELECT * FROM approvals WHERE id=? AND state='pending'", (p["id"],))
+        if not row:
+            continue
+
+        print(f"\n  {GOLD}{BOLD}⏸ {p['agent']} needs approval to run {p['tool']}{OFF}")
+        detail = json.dumps(p.get("args") or {}, indent=2)
+        print(f"  {DIM}{detail[:600]}{OFF}")
+
+        # --yes is the operator pre-authorising, and it deliberately stops short
+        # of the outward-facing actions: those are the ones a human is required
+        # to see, and a flag typed minutes earlier is not seeing them.
+        if auto and security.blanket_approval_covers(p["tool"]):
+            engine.decide_approval(p["id"], True)
+            print(f"  {GREEN}approved{OFF} {DIM}(--yes){OFF}")
+            continue
+        if auto:
+            print(f"  {GOLD}--yes does not cover {p['tool']}: it goes outside this "
+                  f"machine, so it always asks.{OFF}")
+
+        if not sys.stdin.isatty():
+            engine.decide_approval(p["id"], False)
+            print(f"  {RED}denied{OFF} {DIM}(no terminal to ask on — "
+                  f"use --yes, or run it from the console){OFF}")
+            continue
+        try:
+            ans = input(f"  {BOLD}Approve? [y/N]{OFF} ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            ans = "n"
+        ok = ans in ("y", "yes")
+        engine.decide_approval(p["id"], ok)
+        print(f"  {GREEN if ok else RED}{'approved' if ok else 'denied'}{OFF}")
+
+
 def cmd_run(args) -> int:
     db.init()
     _seed()
@@ -184,6 +232,7 @@ def cmd_run(args) -> int:
     from .runtime import bus
     q = bus.subscribe()
     done = threading.Event()
+    pending: list = []
 
     def watch():
         while not done.is_set():
@@ -202,14 +251,18 @@ def cmd_run(args) -> int:
                 mark = f"{GREEN}✓{OFF}" if p["ok"] else f"{RED}✗{OFF}"
                 print(f"  {mark} {DIM}{p['output'][:300]}{OFF}")
             elif k == "approval_requested":
-                print(f"  {GOLD}⏸ approval needed for {p['tool']} — approve it in the console{OFF}")
+                pending.append(p)
+            elif k == "escalation":
+                print(f"\n  {GOLD}🖐 escalated: {p.get('question') or p.get('reason')}{OFF}")
             elif k == "run_finished":
                 done.set()
 
-    t = threading.Thread(target=watch, daemon=True)
-    t.start()
+    threading.Thread(target=watch, daemon=True).start()
+    threading.Thread(target=lambda: _approvals_on_the_terminal(pending, done, args),
+                     daemon=True).start()
     engine.run_task(tid)
     done.set()
+    time.sleep(0.3)   # let the last events drain before the summary
 
     task = db.q1("SELECT * FROM tasks WHERE id=?", (tid,))
     print(f"\n  {BOLD}{'Result' if task['status'] == 'done' else task['status'].title()}{OFF}\n")
@@ -254,6 +307,9 @@ def main(argv=None) -> int:
     r = sub.add_parser("run", help="assign a task to an agent from the terminal")
     r.add_argument("agent")
     r.add_argument("task")
+    r.add_argument("-y", "--yes", action="store_true",
+                   help="approve tool calls as they come up, except the ones that "
+                        "reach outside this machine — those always ask")
     r.set_defaults(fn=cmd_run)
 
     args = parser.parse_args(argv)

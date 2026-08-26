@@ -107,6 +107,18 @@ def requires_human(tool: str) -> bool:
     return tool in ALWAYS_ASK
 
 
+def blanket_approval_covers(tool: str) -> bool:
+    """Whether an approval given in advance may stand in for this call.
+
+    A `--yes` flag, or any other pre-authorisation, is the operator saying yes
+    to a category before seeing what is in it. That is fine for a write inside
+    a granted scope. It is not fine for the actions that leave the machine:
+    those are the ones a human is required to actually look at, and a flag
+    typed minutes earlier is not looking.
+    """
+    return not requires_human(tool)
+
+
 def guard_recipients(recipients: list[str]) -> None:
     allow = [d.strip().lower() for d in
              db.setting("email.allowed_recipients", "").split(",") if d.strip()]

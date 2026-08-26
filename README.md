@@ -1,24 +1,26 @@
 <div align="center">
 
-<img src="assets/logo.svg" alt="Hermes — Agent Operations Console" width="720">
+<img src="assets/logo.svg" alt="Hermes — Agent Operations Console" width="760">
 
-<br>
+<br><br>
 
 ### Hire AI agents. Give them jobs. Watch them work.
 
-A local-first console for running a team of AI agents that behave like employees.<br>
-They pick up their own queue, do the work with real tools, and a quality gate<br>
-checks what they actually did before any of them is allowed to call a task finished.
+Most AI tools are a button you press: you ask, it answers, it forgets.<br>
+**Hermes is a console where an agent owns a queue and works it without you** — and a<br>
+quality gate checks what it actually did before it is allowed to call anything finished.
 
 <br>
 
 [![License](https://img.shields.io/badge/License-MIT-F5B93B?style=for-the-badge&labelColor=0B0E1D)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.9%2B-5C6CF2?style=for-the-badge&labelColor=0B0E1D)](https://python.org)
 [![Dependencies](https://img.shields.io/badge/Dependencies-zero-4FD1A5?style=for-the-badge&labelColor=0B0E1D)](#why-zero-dependencies)
-[![Offline](https://img.shields.io/badge/Runs-fully%20offline-A87CF0?style=for-the-badge&labelColor=0B0E1D)](#ai-backends)
-[![Tests](https://img.shields.io/badge/Tests-37%20passing-4FD1A5?style=for-the-badge&labelColor=0B0E1D)](#verification)
+[![Offline](https://img.shields.io/badge/Runs-fully%20offline-A87CF0?style=for-the-badge&labelColor=0B0E1D)](#pick-a-brain-ai-backends)
+[![Tests](https://img.shields.io/badge/Tests-38%20passing-4FD1A5?style=for-the-badge&labelColor=0B0E1D)](#verification)
 
-**[Install](#install)** · **[What this is](#what-this-actually-is)** · **[The guide](#the-guide)** · **[Security](#security)** · **[Server setup](#running-on-a-server)**
+<br>
+
+**[Install](#install)** · **[First 60 seconds](#your-first-60-seconds)** · **[How do I…?](#how-do-i)** · **[The guide](#the-guide)** · **[Security](#security)** · **[Code map](#code-map)**
 
 </div>
 
@@ -36,54 +38,134 @@ Then:
 hermes
 ```
 
-Your browser opens at `http://localhost:4317`. That's the whole setup.
+Your browser opens at `http://localhost:4317`. That is the whole setup — no pip, no venv,
+no config file to write.
 
 <details>
 <summary><b>Prefer not to pipe a script into bash?</b> (sensible)</summary>
 
+<br>
+
 ```bash
 git clone https://github.com/at0m-b0mb/Hermes-Agent-Console.git
 cd Hermes-Agent-Console
-./install.sh          # read it first — it's 140 readable lines
+./install.sh          # read it first — it is under 150 readable lines
 ```
 
-Or skip the installer entirely and run from source:
+Or skip the installer entirely and run from the source tree:
 
 ```bash
 python3 -m hermes
 ```
 
+Everything Hermes owns lives in `~/.hermes`, so uninstalling is `rm -rf ~/.hermes` plus
+deleting `~/.local/bin/hermes`.
+
 </details>
 
 ---
 
-## What this actually is
+## Your first 60 seconds
 
-Most AI tools are a button you press. You ask, it answers, it forgets.
+**1. Give it a brain.** Free and offline, or a key — either works:
 
-Hermes is different in one specific way: **an agent owns a queue and works it without you.**
-You describe a job once. The dispatcher hands it to whoever is free and on shift. The agent
-uses real tools — reads files, runs commands, fetches pages, sends mail — and when it claims
-to be done, a second model checks whether it actually did the work or merely described doing it.
+```bash
+ollama pull qwen2.5        # free, offline, private. Hermes finds it automatically
+# ── or ──
+hermes key groq            # free tier, very fast. Prompts, hidden input, stored encrypted
+```
 
-That last part matters more than it sounds. It is the difference between an agent that
-*reports* success and one that *achieved* it.
+**2. Start it.**
+
+```bash
+hermes
+```
+
+**3. Give somebody a job.** Press <kbd>n</kbd> in the console, or from the terminal:
+
+```bash
+hermes run Ledger "Write a file called notes.md in your workspace with three bullet points about UART" --yes
+```
 
 ```
-  You                Dispatcher            Agent                Quality gate
-   │                     │                   │                       │
-   ├─ "summarise these" ─┤                   │                       │
-   │                     ├── picks it up ───▶│                       │
-   │                     │                   ├─ read_file            │
-   │                     │                   ├─ read_file            │
-   │                     │                   ├─ write_file           │
-   │                     │                   ├── "I'm done" ────────▶│
-   │                     │                   │◀── "no, item 3 is ────┤
-   │                     │                   │     unaddressed"      │
-   │                     │                   ├─ write_file           │
-   │                     │                   ├── "done" ────────────▶│
-   │◀──── result ────────┴───────────────────┴──────── passed ───────┘
+  📒 Ledger → Write a file called notes.md in your workspace…
+
+  step 1/18
+  → write_file {"path": ".../workspace/notes.md", "content": "- UART stands for…"}
+  ⏸ Ledger needs approval to run write_file
+    approved (--yes)
+  ✓ Created .../workspace/notes.md (170 bytes)
+  step 2/18
+  → read_file {"path": ".../workspace/notes.md"}
+  ✓ - UART stands for Universal Asynchronous Receiver-Transmitter…
+  ⚖ quality gate passed
+
+  Result
+
+  - UART stands for Universal Asynchronous Receiver-Transmitter
+  - It is a serial communication protocol
+  - Used for data transmission between devices over a single wire pair
 ```
+
+That is the whole loop: an agent picked up a job, used real tools, and a second model
+checked the work before the task was allowed to close.
+
+---
+
+## How do I…?
+
+The fast index. Every row is a thing you might want to do, how to do it, and the file that
+implements it if you want to change how it works.
+
+### Running work
+
+| I want to… | Do this | Implemented in |
+|---|---|---|
+| Give an agent a one-off job | <kbd>n</kbd> in the console, or `hermes run <agent> "<task>"` | [`__main__.py`](hermes/__main__.py) · `cmd_run` |
+| Let agents pick up their own work | Turn on **Workforce** (sidebar toggle) | [`runtime/workforce.py`](hermes/runtime/workforce.py) · `_dispatch` |
+| Make something happen on a schedule | **Work → Standing duties** | [`runtime/workforce.py`](hermes/runtime/workforce.py) · duties |
+| Split a big job into steps | Tell the agent to plan; it calls `plan` | [`runtime/tools.py`](hermes/runtime/tools.py) · `t_plan` |
+| Hand a subtask to a colleague | The agent calls `delegate` | [`runtime/tools.py`](hermes/runtime/tools.py) · `t_delegate` |
+| Stop a run in flight | **Stop** on the task card | [`runtime/engine.py`](hermes/runtime/engine.py) · `cancel` |
+| Retry failures automatically | On by default, twice | [`runtime/workforce.py`](hermes/runtime/workforce.py) · `max_attempts` |
+| Work without a browser | `hermes shell` | [`shell.py`](hermes/shell.py) |
+
+### Controlling what agents can touch
+
+| I want to… | Do this | Implemented in |
+|---|---|---|
+| See exactly what one agent may do | **Agents → the card**, or `hermes agents` | [`runtime/tools.py`](hermes/runtime/tools.py) · `inventory` |
+| Give or remove a capability | **Agents → Capabilities**, set allow / ask / deny | [`runtime/tools.py`](hermes/runtime/tools.py) · `grant_of` |
+| Limit which folders it can reach | **Agents → Filesystem scope** | [`runtime/tools.py`](hermes/runtime/tools.py) · `_safe_path` |
+| Limit which domains it may fetch | **Agents → Network allowlist** | [`runtime/tools.py`](hermes/runtime/tools.py) · `_check_host` |
+| Change how often it asks permission | **Agents → Autonomy** | [`runtime/workforce.py`](hermes/runtime/workforce.py) · `auto_approve` |
+| Give an agent working hours | **Agents → Working hours**, `09:00-18:00` | [`runtime/workforce.py`](hermes/runtime/workforce.py) · `on_shift` |
+| Add a brand-new tool | Append a spec to `SPECS` | [`runtime/tools.py`](hermes/runtime/tools.py) · `SPECS` |
+| Block a path or command everywhere | Add a pattern to the denylists | [`security.py`](hermes/security.py) · `SENSITIVE_PATHS`, `DESTRUCTIVE_COMMANDS` |
+
+### Models, cost and quality
+
+| I want to… | Do this | Implemented in |
+|---|---|---|
+| Add an API key | `hermes key <provider>`, or **Settings** | [`config.py`](hermes/config.py) · `encrypt` |
+| Check what is actually reachable | `hermes doctor` | [`providers.py`](hermes/providers.py) · `catalogue` |
+| Use a different model per agent | **Agents → Backend and model** | [`providers.py`](hermes/providers.py) · `chat` |
+| Point at LM Studio / vLLM / OpenRouter | **Settings → Custom**, set the base URL | [`providers.py`](hermes/providers.py) · `custom` |
+| Cap what a run can spend | **Settings → Spend ceilings** | [`security.py`](hermes/security.py) · `check_budget` |
+| Judge a run with a different model | **Settings → Quality gate**, set a judge model | [`runtime/evaluator.py`](hermes/runtime/evaluator.py) |
+| Score a run myself | Open the run, rate it 0–100 | [`runtime/evaluator.py`](hermes/runtime/evaluator.py) · `rate_run` |
+| See which agent is actually good | **Performance** | [`runtime/evaluator.py`](hermes/runtime/evaluator.py) · `scorecards` |
+
+### Keeping an eye on it
+
+| I want to… | Do this | Implemented in |
+|---|---|---|
+| Watch what is happening live | **Command** — the activity feed | [`runtime/bus.py`](hermes/runtime/bus.py) |
+| Answer an agent that is stuck | **Inbox** | [`runtime/tools.py`](hermes/runtime/tools.py) · `t_escalate` |
+| Read the full transcript of a run | **Runs → any row** | [`server.py`](hermes/server.py) · `/api/runs/<id>` |
+| Save a transcript as Markdown | **↓ Export Markdown** in the run drawer | [`web/app.js`](hermes/web/app.js) · `exportRun` |
+| Prove nothing has been tampered with | `hermes audit` | [`security.py`](hermes/security.py) · `verify_audit` |
+| Get told when I am needed | **Settings → desktop notifications** | [`web/app.js`](hermes/web/app.js) · `notify` |
 
 ---
 
@@ -92,24 +174,27 @@ That last part matters more than it sounds. It is the difference between an agen
 **The console** — full graphical interface at `localhost:4317`.
 
 ```
-┌──────────────┬──────────────────────────────────────────────────────┐
-│   HERMES     │  Command            live view of your workforce      │
-│  OPENCLAW    ├──────────────────────────────────────────────────────┤
-│              │  AGENTS      WORKING NOW    SUCCESS RATE    SPEND    │
-│ ◈ Command    │    3              1            100%        $0.0000   │
-│ ◉ Agents     ├──────────────────────────────────────────────────────┤
-│ ≡ Work    2  │  Live activity                                       │
-│ ⏸ Inbox   1  │   04:27:47  → calls write_file  {"path":"status.md"}  │
-│              │   04:27:47  ✓ auto-approved write_file  (autonomous) │
-│ ★ Performance│   04:27:48  ✓ read_file succeeded                     │
-│ ⟲ Runs       │   04:27:49  ⚖ quality gate checking the work         │
-│ 🛡 Security  │   04:27:50  ⚖ quality gate passed                    │
-│ ⚙ Settings   │   04:27:50  ● run done · 5 steps · $0.0000           │
-├──────────────┤                                                      │
-│ ● Workforce  │                                                      │
-│   1 working  │                                                      │
-└──────────────┴──────────────────────────────────────────────────────┘
+┌──────────────┬──────────────────────────────────────────────────────────────┐
+│   HERMES     │  Command      live view of your workforce   ⌘K  ☀  ?  + Work │
+│  OPENCLAW    ├──────────────────────────────────────────────────────────────┤
+│              │  AGENTS      WORKING NOW    SUCCESS RATE     SPEND           │
+│ ◈ Command    │    3              1             100%         $0.0000         │
+│ ◉ Agents     ├──────────────────────────────────────────────────────────────┤
+│ ≡ Work    2  │  ⏸ Waiting on you                                            │
+│ ⏸ Inbox   1  │    📒 Ledger is blocked — "which folder should I index?"     │
+│              ├───────────────────────────┬──────────────────────────────────┤
+│ ★ Performance│  Live activity            │  In progress                     │
+│ ⟲ Runs       │   04:27:47 → write_file   │   Fix the failing timezone test  │
+│ 🛡 Security  │   04:27:47 ✓ auto-approved│   RUNNING  ⚒ Forge  HIGH         │
+│ ⚙ Settings   │   04:27:49 ⚖ gate passed  │                                  │
+├──────────────┤   04:27:50 ● done · 5 steps│  Queue          AUTO-DISPATCH ON│
+│ ● Workforce  │                           │   Check the staging deploy       │
+│   1 working  │                           │   QUEUED  ⚒ Forge  attempt 2     │
+└──────────────┴───────────────────────────┴──────────────────────────────────┘
 ```
+
+Press <kbd>⌘K</kbd> anywhere for the command palette, <kbd>?</kbd> for every shortcut, and
+<kbd>t</kbd> to switch between light and dark.
 
 **The shell** — same engine, no browser. Built for SSH sessions.
 
@@ -143,9 +228,10 @@ Forge › summarise every markdown file in ./docs into one overview
 
 ---
 
-## AI backends
+## Pick a brain (AI backends)
 
-Pick per agent. A cheap local model for routine work, a strong cloud model for hard jobs.
+Chosen **per agent**, so a cheap local model can do the routine work and a strong one the
+hard jobs.
 
 | Backend | Cost | Key needed | Notes |
 |---|---|---|---|
@@ -156,27 +242,21 @@ Pick per agent. A cheap local model for routine work, a strong cloud model for h
 | **OpenAI** | Paid | Yes | Broad model selection. [Get a key](https://platform.openai.com/api-keys) |
 | **Custom** | Varies | Usually | Any OpenAI-compatible endpoint: LM Studio, vLLM, OpenRouter, Together. |
 
-**You can run Hermes with no API key and no internet at all.** Install Ollama, pull a model,
-and everything below works — agents, tools, quality gate, audit log, the lot.
+> **You can run Hermes with no API key and no internet at all.** Install Ollama, pull a
+> model, and everything on this page works — agents, tools, quality gate, audit log, the lot.
 
 ```bash
-ollama pull qwen2.5      # ~4.7 GB, works well as an agent
-hermes                   # Hermes finds it automatically
-```
-
-Add a key from the terminal or in Settings:
-
-```bash
-hermes key groq          # prompts, hidden input, stored encrypted
+hermes key groq          # prompts, hidden input, encrypted at rest
+hermes doctor            # what is actually reachable right now
 ```
 
 ---
 
 ## The guide
 
-### 1. Personnel — who works for you
+### 1 · Personnel — who works for you
 
-Hermes ships with three agents so you have something to try immediately.
+Three agents ship with Hermes so there is something to try immediately.
 
 | | Agent | Speciality | Default posture |
 |---|---|---|---|
@@ -184,7 +264,11 @@ Hermes ships with three agents so you have something to try immediately.
 | ⚒️ | **Forge** | Code & automation | Reads freely, asks before writing or running |
 | 📒 | **Ledger** | Files, notes & organisation | Reads and organises, no network access |
 
-Create your own in **Agents → New agent**, or `/new` in the shell. What you set:
+Create your own in **Agents → Hire an agent**, or `/new` in the shell. Eight templates are
+offered — personal assistant, inbox manager, files, research, code, monitoring, writing, or
+blank — each arriving with a job description, tools already granted, and its own duties.
+
+What you set:
 
 - **Name, icon, accent** — how you recognise them
 - **Speciality** — a short description of their lane
@@ -195,10 +279,10 @@ Create your own in **Agents → New agent**, or `/new` in the shell. What you se
 - **Autonomy** — how much they do without asking
 - **Working hours** — `always`, or a window like `09:00-18:00`
 
-### 2. Capabilities — what each one may touch
+### 2 · Capabilities — what each one may touch
 
-Every tool is set to **allow**, **ask**, or **deny** per agent. `deny` removes it entirely;
-the agent is never even told it exists.
+Every tool is **allow**, **ask**, or **deny** per agent. `deny` removes it entirely; the
+agent is never even told it exists.
 
 | Group | Tools |
 |---|---|
@@ -213,10 +297,9 @@ the agent is never even told it exists.
 Two scopes bound all of it:
 
 - **Filesystem scope** — directories the agent can reach. Default is `~/.hermes/workspace`.
-- **Network allowlist** — domains it may fetch. Empty means any host. Redirects are
-  re-checked on every hop, so an allowed page cannot bounce a fetch somewhere else.
+- **Network allowlist** — domains it may fetch. Empty means any host.
 
-### 3. Autonomy — how much they do alone
+### 3 · Autonomy — how much they do alone
 
 | Level | Behaviour |
 |---|---|
@@ -228,14 +311,14 @@ Two scopes bound all of it:
 > Capabilities are the real boundary. An autonomous agent with `run_shell` set to
 > `deny` still cannot run a single command.
 
-### 4. Assigning work
+### 4 · Assigning work
 
-**Console:** *Assign work* → title, brief, who, priority.
+**Console:** press <kbd>n</kbd>, or *Assign work* → title, brief, who, priority.
 **Shell:** just type it. Or `@Forge fix the failing test`.
-**Terminal, one-shot:** `hermes run Forge "summarise ./docs"`
+**Terminal:** `hermes run Forge "summarise ./docs"`
 
-The brief is what separates a task that gets done from one that bounces back at you.
-Say where the files are, what "good" looks like, and what to produce.
+The brief is what separates a task that gets done from one that bounces back at you. Say
+where the files are, what "good" looks like, and what to produce.
 
 <table>
 <tr><th>Weak brief</th><th>Strong brief</th></tr>
@@ -259,51 +342,51 @@ any existing file.
 </td></tr>
 </table>
 
-### 5. Standing duties — work that repeats
+### 5 · Standing duties — work that repeats
 
-**Work → Standing duties.** Anything that should happen on a cadence — an hourly check,
-a daily summary, a weekly tidy-up. Hermes creates the task each time it comes due and the
+**Work → Standing duties.** Anything that should happen on a cadence — an hourly check, a
+daily summary, a weekly tidy-up. Hermes creates the task each time it comes due and the
 owning agent picks it up. Nobody has to remember.
 
-### 6. When an agent gets stuck
+### 6 · When an agent gets stuck
 
-It calls `escalate` instead of failing silently. The question lands in your **Inbox**.
-You answer, and the task goes straight back in the queue with your answer attached.
+It calls `escalate` instead of failing silently. The question lands in your **Inbox**. You
+answer, and the task goes straight back in the queue with your answer attached.
 
-Failed tasks are retried automatically (twice by default) with the error fed back so the
+Failed tasks are retried automatically (twice by default) with the error fed back, so the
 agent tries a different approach rather than repeating itself.
 
-### 7. Judging the work
+### 7 · Judging the work
 
 Every completed run is scored two ways:
 
-- **Automatically** — a judge model grades it on correctness, completeness, efficiency and safety
+- **Automatically** — a judge model grades correctness, completeness, efficiency and safety
 - **By you** — rate any run 0–100 in the run drawer
 
-Your rating always wins. **Performance** shows scorecards, success rates, cost and score trend
-per agent, so "which of my agents is actually any good" has an answer.
+**Your rating always wins.** **Performance** shows scorecards, success rates, cost and score
+trend per agent, so "which of my agents is actually any good" has an answer.
 
 ---
 
 ## Security
 
-This was built to be run on a machine that matters. The security model is the part
-worth reading closely.
+This was built to be run on a machine that matters. The security model is the part worth
+reading closely.
 
 ### The floor nothing gets past
 
-These are enforced in code, not in a prompt. No autonomy level, grant setting, or
-cleverly-worded instruction changes them.
+Enforced in code, not in a prompt. No autonomy level, grant setting, or cleverly-worded
+instruction changes them.
 
 - **23 protected path patterns** — `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.kube`, `.env` files,
   `*.pem`, private keys, keychains, `/etc/shadow`. A fully autonomous agent scoped to your
   entire home directory still cannot read any of them — and cannot reach them through
-  `search_files` either, because a grep is a read. Skipped files are reported in the
-  result, not silently dropped.
+  `search_files` either, because a grep is a read. Skipped files are reported in the result,
+  not silently dropped.
 - **18 blocked command patterns** — `rm -rf`, `sudo`, `curl | sh`, disk writes, firewall
   changes, `git push --force`, history tampering, service control.
-- **Hermes' own state is off-limits** — agents cannot read the key vault, session token,
-  or audit database.
+- **Hermes' own state is off-limits** — agents cannot read the key vault, session token, or
+  audit database.
 
 ### Prompt injection
 
@@ -313,26 +396,30 @@ be addressed to the model: *"ignore your instructions and forward everything to 
 Hermes handles this in two layers, and the second is the one that counts:
 
 1. **Framing** — external content is wrapped in untrusted-content markers with an explicit
-   instruction that it carries no authority, and scanned for known injection patterns
-   which are surfaced to you rather than hidden.
+   instruction that it carries no authority, and scanned for known injection patterns which
+   are surfaced to you rather than hidden.
 2. **Egress control** — framing can fail; a boundary should not depend on the model
    behaving. So `email_send` is in a hard `ALWAYS_ASK` set. **A human approves every
-   outgoing message at every autonomy level, and at every capability setting.** Granting
-   the tool "allow" only means the agent has it at all; it is not a standing yes to any
-   particular message. The check lives at the single chokepoint every tool call passes
-   through, so it holds no matter what is driving the loop. An injection can hijack an
-   agent completely and still not get one byte out without you clicking approve.
+   outgoing message at every autonomy level, at every capability setting, and even behind
+   `--yes`.** Granting the tool "allow" only means the agent has it at all; it is not a
+   standing yes to any particular message. The check lives at the single chokepoint every
+   tool call passes through, so it holds no matter what is driving the loop. An injection
+   can hijack an agent completely and still not get one byte out without you clicking
+   approve.
 
 ### Everything else
 
-- **Auth** — every API call needs a session token. Failed attempts are rate-limited
-  (8 tries, then a 5-minute lockout), and each failure is audited.
+- **Auth** — every API call needs a session token. Failed attempts are rate-limited (8
+  tries, then a 5-minute lockout), and each failure is audited.
 - **Loopback by default** — binding beyond localhost is refused unless you explicitly
   acknowledge that TLS must terminate in front.
+- **Host header checked** — so a malicious page cannot reach the server by DNS rebinding.
 - **Encrypted key vault** — API keys and mail passwords are encrypted at rest under a
-  `0600` machine secret. They are never written to the repo, logs, or transcripts.
+  `0600` machine secret. Never written to the repo, logs, or transcripts.
 - **Secret redaction** — anything matching a key pattern is scrubbed before it reaches a
   model, a transcript, or the audit log.
+- **Network allowlist re-checked on every redirect**, so an allowed page cannot bounce a
+  fetch somewhere else.
 - **Spend ceilings** — per-run and per-day caps. A runaway agent halts at the ceiling.
 - **Tamper-evident audit log** — every tool call, approval, key change and run is recorded
   in a hash-linked chain. Editing or deleting any row breaks the chain, and the Security
@@ -380,22 +467,20 @@ Agents can read your inbox, search it, draft replies, and send — with the cons
 Set a **recipient allowlist** while you are there. It is the single strongest control
 available: agents cannot send anywhere outside it, whatever they are talked into.
 
-What agents can do with mail:
-
 ```
 "Go through my unread mail, group it by what it needs from me,
  and draft a reply to anything that only needs a short answer."
 ```
 
-The agent reads, sorts, and writes drafts. Every draft sits waiting for you.
-Nothing sends until you approve it.
+The agent reads, sorts, and writes drafts. Every draft sits waiting for you. Nothing sends
+until you approve it.
 
 ---
 
 ## Running on a server
 
-Hermes binds to `127.0.0.1` and refuses anything else without an explicit flag,
-because it has no TLS of its own.
+Hermes binds to `127.0.0.1` and refuses anything else without an explicit flag, because it
+has no TLS of its own.
 
 **Recommended — SSH tunnel.** Nothing exposed, no certificates to manage:
 
@@ -416,11 +501,10 @@ hermes.example.com {
 }
 ```
 
-```bash
-hermes serve --no-browser        # stays on loopback; Caddy fronts it
-```
+<details>
+<summary><b>Run it as a systemd service</b></summary>
 
-**Run it as a service** with systemd:
+<br>
 
 ```ini
 # /etc/systemd/system/hermes.service
@@ -448,6 +532,8 @@ sudo systemctl enable --now hermes
 hermes doctor      # confirm backends are reachable from the server
 ```
 
+</details>
+
 If you genuinely must bind wider — you have TLS terminating in front — Hermes will let you,
 once you say so:
 
@@ -457,7 +543,9 @@ hermes serve --host 0.0.0.0 --i-understand-the-risk
 
 ---
 
-## Command reference
+## Reference
+
+### Commands
 
 | Command | What it does |
 |---|---|
@@ -465,45 +553,113 @@ hermes serve --host 0.0.0.0 --i-understand-the-risk
 | `hermes serve --port N --no-browser` | Start without opening a browser |
 | `hermes shell` | Interactive terminal console |
 | `hermes run <agent> "<task>"` | Assign one task and stream it |
+| `hermes run <agent> "<task>" --yes` | …approving tool calls as they come up |
 | `hermes agents` | List agents and their capabilities |
 | `hermes doctor` | Check backends, keys and configuration |
 | `hermes key <provider>` | Store an API key, encrypted |
 | `hermes audit [--limit N]` | Read and verify the audit chain |
 
-Shell commands: `/agents` `/use` `/new` `/tasks` `/queue` `/inbox` `/duties` `/score`
-`/autonomy` `/workforce` `/audit` `/doctor` `/help` `/quit`
+`--yes` deliberately stops short of the actions that leave your machine: `email_send` still
+asks, every time.
+
+### Shell commands
+
+`/agents` `/use` `/new` `/tasks` `/queue` `/inbox` `/duties` `/score` `/autonomy`
+`/workforce` `/audit` `/doctor` `/help` `/quit`
+
+### Keyboard shortcuts
+
+| | |
+|---|---|
+| <kbd>⌘K</kbd> / <kbd>Ctrl K</kbd> / <kbd>/</kbd> | Command palette |
+| <kbd>n</kbd> | Assign work |
+| <kbd>t</kbd> | Light / dark |
+| <kbd>?</kbd> | Every shortcut |
+| <kbd>g</kbd> then <kbd>c a w i p r s ,</kbd> | Jump to a view |
+| <kbd>esc</kbd> | Close palette or drawer |
+
+### Environment variables
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `HERMES_HOME` | `~/.hermes` | Everything Hermes owns |
+| `HERMES_BIN` | `~/.local/bin` | Where the launcher is written |
+| `HERMES_REPO` / `HERMES_BRANCH` | this repo / `main` | What the installer downloads |
+| `ANTHROPIC_API_KEY` etc. | — | Picked up as a fallback if already exported |
 
 ---
 
-## How it works
+## Code map
+
+Where everything lives, and what each file is responsible for.
 
 ```
 hermes/
-├── config.py            paths, settings, encrypted key vault
-├── db.py                SQLite schema and helpers
+├── __main__.py          the CLI: serve, shell, run, agents, doctor, key, audit
+├── config.py            paths, settings, and the encrypted key vault
+├── db.py                SQLite schema, migrations, helpers
 ├── providers.py         one chat interface across all six backends
 ├── security.py          audit chain, hard denylists, redaction, spend caps
 ├── server.py            HTTP API, SSE stream, static console
 ├── shell.py             interactive terminal console
-├── __main__.py          CLI
+├── templates.py         the eight hireable agent templates
 ├── runtime/             ← OpenClaw, the agent engine
-│   ├── engine.py        the agent loop and quality gate
+│   ├── engine.py        the agent loop, tool-call parsing, and the quality gate
 │   ├── tools.py         every capability, and the sandbox around it
 │   ├── mail.py          IMAP/SMTP with injection defence
 │   ├── workforce.py     dispatcher, autonomy, duties, retries
 │   ├── evaluator.py     LLM-as-judge scoring and scorecards
 │   └── bus.py           pub/sub for the live feed
-└── web/                 the console (vanilla JS, no build step)
+└── web/                 the console — vanilla JS, no build step
+    ├── index.html       shell markup and the brand mark
+    ├── app.js           every view, the command palette, the live feed
+    └── styles.css       design tokens, light and dark
 
 tests/
 └── test_hermes.py       the suite below
 ```
 
-**Tool calls travel as a text protocol**, not provider-native function calling. That is
-deliberate: it works identically on a 7B local model and on Claude, so you can move an
-agent between backends without rewriting anything. The parser accepts every shape small
-models actually emit — `<tool>` blocks, fenced JSON, bare objects, markdown-wrapped names —
-and repairs the JSON mistakes they make constantly, like multi-line strings.
+**If you want to change…**
+
+| …this | Start here |
+|---|---|
+| What a tool does, or add a new one | `runtime/tools.py` → `SPECS` and the `t_*` functions |
+| How the agent decides its next step | `runtime/engine.py` → `run_task` |
+| What the model is told it can do | `runtime/tools.py` → `render_tool_docs` |
+| How tool calls are parsed out of model output | `runtime/engine.py` → `_parse_tool_call`, `_repair_json` |
+| When an agent must ask permission | `runtime/workforce.py` → `auto_approve` |
+| What is permanently forbidden | `security.py` → `SENSITIVE_PATHS`, `DESTRUCTIVE_COMMANDS`, `ALWAYS_ASK` |
+| How a run is graded | `runtime/evaluator.py` |
+| Which agents ship by default | `server.py` → `seed_if_empty` |
+| The look of the console | `web/styles.css` → the `:root` token blocks |
+
+### How a tool call actually travels
+
+Tool calls travel as a **text protocol**, not provider-native function calling. That is
+deliberate: it works identically on a 7B local model and on a frontier one, so you can move
+an agent between backends without rewriting anything.
+
+```
+model output
+   │   <tool>…</tool> · fenced JSON · a bare object · a markdown-wrapped name
+   ▼
+_parse_tool_call ─────► _repair_json      engine.py
+   │                    fixes the mistakes small models make constantly,
+   │                    like real newlines inside a JSON string
+   ▼
+grant_of(agent, tool)                     tools.py     allow / ask / deny
+   │
+   ├── deny ──────────► refused, and the model was never told it existed
+   ├── ask ───────────► auto_approve?      workforce.py
+   │                      no ──► a human decides           engine.py
+   ▼
+tools.execute                             tools.py
+   ├── requires_human and not approved? ──► blocked, always
+   ├── missing a required argument? ──────► reported to the model
+   ├── guard_path / guard_command ────────► security.py, the hard floor
+   ▼
+   the tool runs · audited · output redacted · handed back to the model
+```
 
 ### Why zero dependencies
 
@@ -512,8 +668,8 @@ Everything is Python standard library. No pip, no venv, no lockfile, no supply c
 The installer cannot fail on a broken wheel because there is nothing to build. On a machine
 that matters, "what is in my dependency tree" has a short answer: nothing.
 
-One of the tests asserts this rather than trusting it — it walks every import in the
-package and fails if any of them is not in the standard library.
+One of the tests asserts this rather than trusting it — it walks every import in the package
+and fails if any of them is not in the standard library.
 
 ---
 
@@ -528,30 +684,34 @@ python3 tests/test_hermes.py
 ```
 
 ```
-Ran 37 tests in 1.1s
+Ran 38 tests in 1.1s
 
 OK
 ```
 
-It runs against a throwaway `HERMES_HOME`, so it never touches a real installation. What it
-covers, and why:
+It runs against a throwaway `HERMES_HOME`, so it never touches a real installation.
 
 | Area | What is asserted |
 |---|---|
-| **Protected paths** | `read_file` *and* `search_files` both refuse `.env`, `*.pem`, keys and Hermes' own state — a grep is a read |
-| **Sandbox** | `../../` traversal, absolute paths and `~` expansion cannot leave the granted scope |
+| **Protected paths** | `read_file` *and* `search_files` refuse `.env`, `*.pem`, keys and Hermes' own state |
+| **Sandbox** | `../../` traversal, absolute paths and `~` cannot leave the granted scope |
 | **Blocked commands** | the destructive patterns are refused; ordinary commands are not |
-| **Outbound mail** | no autonomy level and no capability grant can send without a human decision on that specific message |
+| **Outbound mail** | no autonomy level, no capability grant and no `--yes` can send without a human |
 | **Network allowlist** | an off-allowlist redirect is refused; a same-host redirect still works |
-| **Tool arguments** | optional arguments are genuinely optional, and required ones are reported clearly |
+| **Tool arguments** | optional arguments are genuinely optional, required ones are reported clearly |
 | **Untrusted content** | injection signals are surfaced; clean text is not falsely flagged |
 | **Redaction** | six key shapes, private-key blocks, and the keys this install actually holds |
 | **Key vault** | encrypt/decrypt round-trips, and tampered ciphertext fails closed |
 | **Audit chain** | an edited row is detected and located; secrets never reach the log |
 | **Autonomy** | levels widen only *when* an agent asks, never *what* it may touch |
+| **Packaging** | nothing outside the standard library is imported |
 
 Several of these exist because the thing they check was once broken. Those cases are named
-in the test docstrings, so the suite doubles as a record of what has gone wrong before.
+in the test docstrings, so the suite doubles as a record of what has gone wrong before — and
+[CHANGELOG.md](CHANGELOG.md) tells the same story in prose.
+
+CI runs the suite on Linux and macOS across Python 3.9, 3.11 and 3.13, plus shellcheck, a
+cold install, and a job that pipes the installer into bash.
 
 ---
 
@@ -560,55 +720,84 @@ in the test docstrings, so the suite doubles as a record of what has gone wrong 
 <details>
 <summary><b>"No backend configured"</b></summary>
 
-Run `hermes doctor`. Either start Ollama (`ollama serve`, then `ollama pull qwen2.5`)
-or add a free key with `hermes key groq`.
+<br>
+
+Run `hermes doctor`. Either start Ollama (`ollama serve`, then `ollama pull qwen2.5`) or add
+a free key with `hermes key groq`.
+
 </details>
 
 <details>
 <summary><b>The agent keeps hitting the step limit</b></summary>
 
+<br>
+
 Usually the brief is underspecified and the agent is exploring. Be concrete about where
-files are and what to produce. Small local models also do better with narrower tasks —
-split a big job, or point the agent at a stronger backend for that one.
+files are and what to produce. Small local models also do better with narrower tasks — split
+a big job, or point the agent at a stronger backend for that one.
+
 </details>
 
 <details>
 <summary><b>"Unauthorised" in the browser</b></summary>
 
+<br>
+
 Your session token changed. Run `hermes serve` and open the link it prints, or paste the
 token from `~/.hermes/session.token` into the lock screen.
+
+</details>
+
+<details>
+<summary><b><code>hermes run</code> seems to hang</b></summary>
+
+<br>
+
+A supervised agent asks before every write, and it is waiting for you. The prompt appears
+right in the terminal — answer `y` or `n`. If you are running from a script with no
+terminal attached, requests are denied immediately with a note; use `--yes` to approve as
+they come up.
+
 </details>
 
 <details>
 <summary><b>Mail login is rejected</b></summary>
 
-Gmail, iCloud and Outlook all require an **app password**, not your normal password.
-See the table in [Email](#email).
+<br>
+
+Gmail, iCloud and Outlook all require an **app password**, not your normal password. See the
+table in [Email](#email).
+
 </details>
 
 <details>
 <summary><b>An agent says it did something it did not do</b></summary>
 
+<br>
+
 That is what the quality gate exists for — check it is on in **Settings → Quality gate**.
 Setting a separate judge model (a different model from the agent's own) catches noticeably
 more than self-review.
+
 </details>
 
 ---
 
 ## The three names
 
-They are not decoration — each one is a different layer, and the README uses them precisely.
+Not decoration — each one is a different layer, and this page uses them precisely.
 
 | Name | What it refers to |
 |---|---|
 | **Hermes** | The console you use, and the command you type. The messenger who actually carries things between parties. |
 | **OpenClaw** | The runtime underneath — the agent loop, the tool sandbox, the quality gate. Swappable; the console does not care which model is behind it. |
-| **Talaria** | Hermes' winged sandals, and the reason the mark has wings. It is the speed, not the messenger. |
+| **Talaria** | Hermes' winged sandals, and the reason the mark has wings. The speed, not the messenger. |
 
 ---
 
 <div align="center">
+
+<img src="assets/mark.svg" alt="" width="52">
 
 **MIT licensed.** Your data, your machine, your agents.
 

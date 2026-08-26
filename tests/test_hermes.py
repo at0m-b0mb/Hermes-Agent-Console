@@ -125,6 +125,13 @@ class OutboundRequiresAHuman(unittest.TestCase):
         self.assertIn("No mail account connected", str(caught.exception),
                       "should have passed the gate and reached the mail layer")
 
+    def test_a_blanket_pre_approval_does_not_cover_it(self):
+        """`hermes run --yes` is the operator saying yes to a category before
+        seeing what is in it. Sending is the one thing they must actually see."""
+        self.assertFalse(security.blanket_approval_covers("email_send"))
+        for tool in ("write_file", "run_shell", "http_fetch", "email_draft"):
+            self.assertTrue(security.blanket_approval_covers(tool), tool)
+
     def test_recipient_allowlist(self):
         db.set_setting("email.allowed_recipients", "trusted.example")
         try:

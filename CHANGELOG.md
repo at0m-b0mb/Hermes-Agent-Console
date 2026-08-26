@@ -3,6 +3,57 @@
 All notable changes to Hermes are recorded here.
 This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] — 2026-08-26
+
+### The console gained a keyboard
+
+- **Command palette** on <kbd>⌘K</kbd> / <kbd>Ctrl K</kbd> / <kbd>/</kbd> — every view,
+  every agent, and the actions worth reaching in one keystroke. Matches on a subsequence,
+  so "asw" finds "Assign work".
+- **Single-key navigation** — <kbd>g</kbd> then a letter to jump between views,
+  <kbd>n</kbd> to assign work, <kbd>t</kbd> for the theme, <kbd>esc</kbd> to close whatever
+  is open, and <kbd>?</kbd> for a sheet listing all of it.
+
+### Light theme
+
+- A full light palette alongside the original dark one, toggled with <kbd>t</kbd> or the
+  topbar button and remembered per browser. With no stored choice it follows the operating
+  system, and it is applied before the first paint so there is no flash of the wrong ground.
+- Two chrome surfaces — the sidebar gradient and the topbar — were painted with literal
+  colours and stayed dark in light mode. Both now read through tokens.
+
+### Elsewhere in the console
+
+- **Desktop notifications**, opt-in, for the two things worth interrupting you: an agent
+  waiting on your decision, and a run finishing. They fire only while the tab is in the
+  background.
+- **Export a run as Markdown** from the run drawer — metadata, full transcript, final result.
+- **Agent icons render.** They are emoji, and the font stack had no emoji family in it, so
+  they appeared as tofu boxes on Linux and Windows.
+- The capability editor now says on `email_send` itself that "allow" does not remove the
+  approval step, because it does not and cannot.
+
+### `hermes run` finishes what it starts
+
+- **Approvals are answered in the terminal.** A supervised agent asks before every write, so
+  `hermes run` used to sit in silence for the full fifteen-minute approval timeout with no
+  way to say yes — the console was the only place a decision could be made. It now prompts
+  where you are, the way `hermes shell` always did.
+- **`--yes`** approves tool calls as they come up, for scripts and unattended runs. It
+  deliberately stops short of the actions that leave the machine: `email_send` still asks,
+  every time. `security.blanket_approval_covers` states that rule in one place and a test
+  holds it there.
+- With no terminal attached, requests are **denied immediately with the remedy printed**
+  rather than hanging until timeout.
+
+### Documentation
+
+- The README is rebuilt around **"How do I…?"** — four tables mapping a thing you want to do
+  to the way to do it and the file that implements it, plus a code map saying where to go to
+  change each behaviour and a diagram of how a tool call actually travels through the system.
+
+---
+
 ## [1.0.0] — 2026-08-25
 
 First public release.
@@ -80,4 +131,5 @@ the fix.
   requires a real file on disk before taking that branch. A CI job runs the installer
   through a pipe on every push.
 
+[1.1.0]: https://github.com/at0m-b0mb/Hermes-Agent-Console/releases/tag/v1.1.0
 [1.0.0]: https://github.com/at0m-b0mb/Hermes-Agent-Console/releases/tag/v1.0.0

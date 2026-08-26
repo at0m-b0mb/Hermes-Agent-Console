@@ -31,8 +31,57 @@
   --shadow: 0 8px 32px rgba(0,0,0,.45);
   --glow-gold: 0 0 0 1px rgba(245,185,59,.35), 0 4px 24px rgba(245,185,59,.12);
 
-  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif;
-  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  /* The emoji families are load-bearing: agent icons are emoji, and without an
+     explicit fallback they render as tofu boxes on Linux and Windows. */
+  --emoji: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", "Twemoji Mozilla", sans-serif;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif, var(--emoji);
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace, var(--emoji);
+
+  /* Gold as *text* needs a darker mix on a light ground; gold as a *fill*
+     always carries dark ink on top, so it stays the same in both themes. */
+  --gold-ink:   #F5B93B;
+  --wash-1:     rgba(92,108,242,.16);
+  --wash-2:     rgba(245,185,59,.09);
+  --scrim:      rgba(5,7,16,.62);
+  --overlay:    rgba(0,0,0,.45);
+  --surface-deep: #0D1022;
+  --chrome:     rgba(17,20,42,.75);
+}
+
+/* ===================== light theme =====================
+   Same hierarchy, inverted ground. Only the tokens change; every rule below
+   reads through them, so there is one source of truth for both themes. */
+:root[data-theme="light"] {
+  --ink:        #F1F3FB;
+  --surface:    #FFFFFF;
+  --surface-2:  #F7F8FD;
+  --surface-3:  #ECEFF9;
+  --line:       #D9DEEF;
+  --line-soft:  #E6EAF6;
+
+  --indigo:     #4655D8;
+  --indigo-dim: #8E97E8;
+  --gold:       #F5B93B;
+  --gold-dim:   #C58F1B;
+  --gold-ink:   #9A6B08;
+
+  --text:       #14172D;
+  --text-2:     #474E75;
+  --muted:      #737AA3;
+
+  --green:      #12876A;
+  --amber:      #B37400;
+  --red:        #C8393D;
+  --violet:     #7B4FC4;
+
+  --shadow: 0 6px 22px rgba(24,29,64,.10);
+  --glow-gold: 0 0 0 1px rgba(197,143,27,.38), 0 4px 20px rgba(245,185,59,.20);
+  --wash-1:     rgba(92,108,242,.09);
+  --wash-2:     rgba(245,185,59,.10);
+  --scrim:      rgba(28,33,64,.34);
+  --overlay:    rgba(24,29,64,.14);
+  --surface-deep: #EAEDF8;
+  --chrome:     rgba(255,255,255,.80);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -57,8 +106,8 @@ body {
 body::before {
   content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 0;
   background:
-    radial-gradient(900px 500px at 12% -8%,  rgba(92,108,242,.16), transparent 60%),
-    radial-gradient(700px 420px at 92% 104%, rgba(245,185,59,.09), transparent 60%);
+    radial-gradient(900px 500px at 12% -8%,  var(--wash-1), transparent 60%),
+    radial-gradient(700px 420px at 92% 104%, var(--wash-2), transparent 60%);
 }
 
 ::selection { background: rgba(245,185,59,.28); }
@@ -73,7 +122,7 @@ body::before {
 .shell { display: grid; grid-template-columns: 236px 1fr; height: 100vh; position: relative; z-index: 1; }
 
 .sidebar {
-  background: linear-gradient(180deg, var(--surface) 0%, #0D1022 100%);
+  background: linear-gradient(180deg, var(--surface) 0%, var(--surface-deep) 100%);
   border-right: 1px solid var(--line-soft);
   display: flex; flex-direction: column; overflow: hidden;
 }
@@ -97,7 +146,7 @@ body::before {
 }
 .nav-item:hover { background: var(--surface-2); color: var(--text); }
 .nav-item.active { background: var(--surface-3); color: var(--text); border-color: var(--line); }
-.nav-item.active .nav-ico { color: var(--gold); }
+.nav-item.active .nav-ico { color: var(--gold-ink); }
 .nav-ico { width: 17px; text-align: center; color: var(--muted); font-size: 14px; }
 .nav-badge {
   margin-left: auto; background: var(--gold); color: #1A1200; font-size: 10px; font-weight: 800;
@@ -127,7 +176,7 @@ body::before {
 
 .topbar {
   height: 58px; flex-shrink: 0; padding: 0 24px; border-bottom: 1px solid var(--line-soft);
-  display: flex; align-items: center; gap: 16px; background: rgba(17,20,42,.75);
+  display: flex; align-items: center; gap: 16px; background: var(--chrome);
   backdrop-filter: blur(14px);
 }
 .topbar h1 { font-size: 16px; font-weight: 650; letter-spacing: -.01em; }
@@ -198,7 +247,7 @@ select { cursor: pointer; appearance: none;
   border: 1px solid; white-space: nowrap;
 }
 .p-green  { color: var(--green);  border-color: rgba(79,209,165,.32);  background: rgba(79,209,165,.1); }
-.p-gold   { color: var(--gold);   border-color: rgba(245,185,59,.32);  background: rgba(245,185,59,.1); }
+.p-gold   { color: var(--gold-ink);   border-color: rgba(245,185,59,.32);  background: rgba(245,185,59,.1); }
 .p-red    { color: var(--red);    border-color: rgba(242,104,107,.32); background: rgba(242,104,107,.1); }
 .p-indigo { color: var(--indigo); border-color: rgba(92,108,242,.34);  background: rgba(92,108,242,.1); }
 .p-violet { color: var(--violet); border-color: rgba(168,124,240,.32); background: rgba(168,124,240,.1); }
@@ -262,7 +311,7 @@ select { cursor: pointer; appearance: none;
 .tpl:hover { border-color: var(--accent, var(--gold)); transform: translateY(-2px); background: var(--surface-3); }
 .tpl::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 2px; background: var(--accent, var(--gold)); }
 .tpl-top { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 11px; }
-.tpl-tag { font-size: 11.5px; color: var(--gold); font-weight: 550; }
+.tpl-tag { font-size: 11.5px; color: var(--gold-ink); font-weight: 550; }
 .tpl-about { font-size: 12.5px; color: var(--text-2); line-height: 1.55; margin-bottom: 12px; }
 
 /* ===================== live feed ===================== */
@@ -280,7 +329,7 @@ select { cursor: pointer; appearance: none;
 .fe.warn .fe-i { color: var(--amber); }
 .fe.err  .fe-i { color: var(--red); }
 .fe.info .fe-i { color: var(--indigo); }
-.fe.gold .fe-i { color: var(--gold); }
+.fe.gold .fe-i { color: var(--gold-ink); }
 
 /* ===================== tasks ===================== */
 
@@ -338,7 +387,7 @@ select { cursor: pointer; appearance: none;
 .seg button:hover { color: var(--text); }
 .seg button.on { background: var(--surface-3); color: var(--text); }
 .seg button.on[data-m="allow"] { background: rgba(79,209,165,.18); color: var(--green); }
-.seg button.on[data-m="ask"]   { background: rgba(245,185,59,.18); color: var(--gold); }
+.seg button.on[data-m="ask"]   { background: rgba(245,185,59,.18); color: var(--gold-ink); }
 .seg button.on[data-m="deny"]  { background: rgba(242,104,107,.16); color: var(--red); }
 
 .danger-tag { font-size: 9.5px; letter-spacing: .06em; text-transform: uppercase; font-weight: 700; padding: 1px 6px; border-radius: 4px; }
@@ -448,3 +497,125 @@ select { cursor: pointer; appearance: none;
   .brand-text, .nav-item span:not(.nav-ico):not(.nav-badge), .nav-label, .wf-text { display: none; }
   .nav-item { justify-content: center; }
 }
+
+
+/* ===================== keyboard layer =====================
+   Two overlays that share a scrim: the command palette (⌘K) and the shortcut
+   sheet (?). Both are keyboard-first, so focus rings stay visible and the
+   active row is driven by the arrow keys rather than the pointer.
+   ========================================================== */
+
+.scrim {
+  position: fixed; inset: 0; z-index: 90; background: var(--scrim);
+  backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+  display: flex; justify-content: center; align-items: flex-start;
+}
+
+/* ---- command palette ---- */
+.palette {
+  width: min(680px, calc(100vw - 32px)); margin-top: 12vh;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r-lg); box-shadow: var(--shadow); overflow: hidden;
+  animation: rise .13s ease-out;
+}
+@keyframes rise { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+
+.pal-in {
+  display: flex; align-items: center; gap: 10px;
+  padding: 15px 18px; border-bottom: 1px solid var(--line-soft);
+}
+.pal-in span { color: var(--gold-ink); font-size: 15px; }
+.pal-in input {
+  flex: 1; background: none; border: 0; outline: none;
+  color: var(--text); font-family: var(--font); font-size: 15.5px;
+}
+.pal-in input::placeholder { color: var(--muted); }
+
+.pal-list { max-height: 46vh; overflow-y: auto; padding: 6px; }
+.pal-sec {
+  font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--muted); font-weight: 700; padding: 10px 12px 5px;
+}
+.pal-row {
+  display: flex; align-items: center; gap: 11px; padding: 9px 12px;
+  border-radius: var(--r-sm); cursor: pointer; scroll-margin: 8px;
+}
+.pal-row.on { background: var(--surface-3); }
+.pal-row.on .pal-t { color: var(--text); }
+.pal-ico {
+  width: 26px; height: 26px; flex: none; display: grid; place-items: center;
+  border-radius: 7px; background: var(--surface-3); font-size: 13px;
+  font-family: var(--emoji), var(--font);
+}
+.pal-row.on .pal-ico { background: var(--indigo); color: #fff; }
+.pal-body { min-width: 0; flex: 1; }
+.pal-t { font-size: 13.5px; color: var(--text-2); font-weight: 550;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pal-d { font-size: 11.5px; color: var(--muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pal-hint { font-size: 10.5px; color: var(--muted); font-family: var(--mono); flex: none; }
+.pal-empty { padding: 26px 12px; text-align: center; color: var(--muted); font-size: 13px; }
+
+.pal-foot {
+  display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
+  padding: 9px 16px; border-top: 1px solid var(--line-soft);
+  background: var(--surface-2); font-size: 11px; color: var(--muted);
+}
+
+kbd {
+  font-family: var(--mono); font-size: 10.5px; line-height: 1;
+  padding: 3px 6px; border-radius: 5px;
+  background: var(--surface-3); border: 1px solid var(--line);
+  border-bottom-width: 2px; color: var(--text-2); white-space: nowrap;
+}
+
+/* ---- shortcut sheet ---- */
+.sheet {
+  width: min(620px, calc(100vw - 32px)); margin-top: 12vh;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r-lg); box-shadow: var(--shadow);
+  animation: rise .13s ease-out; overflow: hidden;
+}
+.sheet-h {
+  display: flex; align-items: baseline; gap: 10px;
+  padding: 16px 20px; border-bottom: 1px solid var(--line-soft);
+}
+.sheet-h b { font-size: 15px; }
+.sheet-h span { font-size: 12px; color: var(--muted); }
+.sheet-grid {
+  padding: 8px 20px 18px; display: grid; gap: 0 34px;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+}
+.sheet-sec {
+  font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--muted); font-weight: 700; padding: 15px 0 4px;
+}
+.sheet-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 14px; padding: 6px 0; font-size: 13px; color: var(--text-2);
+  border-bottom: 1px solid var(--line-soft);
+}
+.sheet-row:last-child { border-bottom: 0; }
+.sheet-row div { display: flex; gap: 4px; flex: none; }
+
+/* ---- topbar icon buttons ---- */
+.icon-btn {
+  width: 32px; height: 32px; flex: none; display: grid; place-items: center;
+  border-radius: 9px; border: 1px solid var(--line); background: var(--surface-2);
+  color: var(--text-2); cursor: pointer; font-size: 14px; line-height: 1;
+  font-family: var(--font); transition: border-color .12s, color .12s, background .12s;
+}
+.icon-btn:hover { color: var(--text); border-color: var(--indigo-dim); background: var(--surface-3); }
+.icon-btn.on { color: var(--gold-ink); border-color: var(--gold-dim); }
+
+.kbd-btn {
+  display: inline-flex; align-items: center; gap: 7px; height: 32px;
+  padding: 0 11px; border-radius: 9px; border: 1px solid var(--line);
+  background: var(--surface-2); color: var(--muted); cursor: pointer;
+  font-family: var(--font); font-size: 12.5px;
+  transition: border-color .12s, color .12s;
+}
+.kbd-btn:hover { color: var(--text-2); border-color: var(--indigo-dim); }
+.kbd-btn kbd { background: none; border: 0; padding: 0; font-size: 11px; }
+
+@media (max-width: 900px) { .kbd-btn span { display: none; } }

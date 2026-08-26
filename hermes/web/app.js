@@ -51,6 +51,8 @@ const App = {
     document.getElementById('lock').hidden = true;
     document.getElementById('shell').hidden = false;
     this.boot = await this.api('/api/bootstrap');
+    this.applyTheme(this.theme());
+    this.bindKeys();
     this.renderNav();
     this.connect();
     await this.refresh();
@@ -103,8 +105,16 @@ const App = {
     }
     if (['approval_requested', 'escalation'].includes(ev.kind)) {
       this.refresh(true);
-      this.toast(ev.kind === 'escalation'
-        ? `${ev.payload.agent} needs your input` : `Approval needed: ${ev.payload.tool}`, 'gold');
+      const msg = ev.kind === 'escalation'
+        ? `${ev.payload.agent} needs your input` : `Approval needed: ${ev.payload.tool}`;
+      this.toast(msg, 'gold');
+      this.notify('Hermes needs you', ev.kind === 'escalation'
+        ? `${ev.payload.agent}: ${ev.payload.question || ev.payload.reason || 'is blocked'}`
+        : `${ev.payload.agent} wants to run ${ev.payload.tool}`);
+    }
+    if (ev.kind === 'run_finished') {
+      this.notify(ev.payload.status === 'done' ? 'Run finished' : 'Run failed',
+        `${ev.payload.agent || 'An agent'} · ${ev.payload.task || ev.payload.status || ''}`.trim());
     }
     if (['run_finished', 'run_started', 'task_picked_up', 'approval_decided',
          'escalation_answered', 'task_retry', 'duty_due'].includes(ev.kind)) this.refresh(true);
@@ -594,6 +604,9 @@ const App = {
     const { run } = await this.api(`/api/runs/${id}`);
     const human = (run.evals || []).find(e => e.kind === 'human');
     const auto = (run.evals || []).find(e => e.kind === 'auto');
+    // Kept so the export button can reach the run without a second fetch.
+    this.state.openRun = { ...run, id, task_title: run.task && run.task.title,
+                           result: run.task && run.task.result };
     this.drawer(`Run · ${esc(run.task ? run.task.title : id)}`, `
       <div class="grid g4" style="margin-bottom:18px">
         ${miniStat('Status', run.status)} ${miniStat('Steps', run.steps)}
@@ -617,7 +630,8 @@ const App = {
         </div>
       </div>
 
-      <div class="card-h"><h3>Transcript</h3><span class="count">${run.transcript.length} entries</span></div>
+      <div class="card-h"><h3>Transcript</h3><span class="count">${run.transcript.length} entries</span>
+        <div class="right"><button class="btn btn-sm" onclick="App.exportRun(App.state.openRun)">↓ Export Markdown</button></div></div>
       <div class="tr">${run.transcript.map(e => e.role === 'tool' ? `
         <div class="tr-e tool ${e.ok === false ? 'bad' : ''}">
           <div class="tr-h"><span>${e.ok === false ? '✕' : '✓'}</span><span>${esc(e.tool || 'tool')}</span></div>
@@ -693,7 +707,22 @@ const App = {
   async vSettings() {
     const b = this.boot = await this.api('/api/bootstrap');
     const s = b.settings;
+    const notify = this.notifyOn();
     this.set(`
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-h"><h3>This console</h3>
+          <span class="count">stored in this browser only</span></div>
+        <p class="muted" style="font-size:12.5px;margin-bottom:14px">Preferences for how the console looks and behaves on this machine. They are not part of your Hermes configuration and are never sent anywhere.</p>
+        <div class="row" style="gap:10px;flex-wrap:wrap">
+          <button class="btn" onclick="App.toggleTheme()">
+            ${this.theme() === 'dark' ? '☀ Switch to light' : '☾ Switch to dark'}</button>
+          <button class="btn ${notify ? 'btn-primary' : ''}" onclick="App.askNotify()">
+            ${notify ? '✓ Desktop notifications on' : 'Turn on desktop notifications'}</button>
+          <button class="btn" onclick="App.shortcuts()">Keyboard shortcuts</button>
+        </div>
+        <p class="muted" style="font-size:12px;margin-top:12px">Notifications only fire while this tab is in the background, and only for the two things worth interrupting you: an agent waiting on your decision, and a run finishing.</p>
+      </div>
+
       <div class="card" style="margin-bottom:16px">
         <div class="card-h"><h3>AI backends</h3>
           <span class="count">${b.providers.filter(p => p.ok).length} of ${b.providers.length} ready</span></div>
@@ -1225,6 +1254,329 @@ const App = {
   },
 
   /* ==================================================== chrome bits */
+
+  /* =================================================== keyboard layer
+     A console you run all day should be reachable without the mouse. Three
+     pieces: a command palette over everything nameable, single-key navigation,
+     and a sheet that tells you both exist. State lives in `kb` so the global
+     handler can tell "palette open" from "typing in a form".
+     ================================================================== */
+  kb: { open: null, items: [], sel: 0, chord: 0 },
+
+  isMac: navigator.platform.toUpperCase().includes('MAC'),
+
+  bindKeys() {
+    document.getElementById('palKey').textContent = this.isMac ? '⌘K' : 'Ctrl K';
+
+    document.addEventListener('keydown', e => {
+      const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || '')
+                     || document.activeElement?.isContentEditable;
+
+      // ⌘K / Ctrl+K reaches the palette even from inside a field — that is the
+      // whole point of a palette shortcut.
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault(); return this.palette();
+      }
+      if (e.key === 'Escape') {
+        if (this.kb.open) { e.preventDefault(); return this.closeOverlay(); }
+        if (document.getElementById('drawer')) { e.preventDefault(); return this.closeDrawer(); }
+        return;
+      }
+      if (this.kb.open === 'palette') return this.palKey(e);
+      if (this.kb.open) return;
+      if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
+
+      // `g` then a letter — the two-key idiom people already know from
+      // GitHub and Gmail. The chord lapses after a second.
+      if (this.kb.chord && Date.now() - this.kb.chord < 1000) {
+        const dest = { c: 'command', a: 'agents', w: 'work', i: 'inbox',
+                       p: 'performance', r: 'runs', s: 'security', ',': 'settings' }[e.key];
+        this.kb.chord = 0;
+        if (dest) { e.preventDefault(); this.go(dest); }
+        return;
+      }
+      if (e.key === 'g') { this.kb.chord = Date.now(); return; }
+      // Some layouts report shift+/ rather than the composed '?'.
+      if (e.key === '?' || (e.shiftKey && e.key === '/')) {
+        e.preventDefault(); return this.shortcuts();
+      }
+      if (e.key === '/' && !e.shiftKey) { e.preventDefault(); return this.palette(); }
+      if (e.key === 'n') { e.preventDefault(); return this.taskDrawer(); }
+      if (e.key === 't') { e.preventDefault(); return this.toggleTheme(); }
+    });
+  },
+
+  closeOverlay() {
+    this.kb.open = null;
+    document.getElementById('overlay').innerHTML = '';
+  },
+
+  /* ------------------------------------------------------ command palette */
+  palItems() {
+    const views = [
+      ['command', '◈', 'Command', 'live view of your workforce'],
+      ['agents', '◉', 'Agents', 'your team and what each one may touch'],
+      ['work', '≡', 'Work', 'the queue, in progress, and standing duties'],
+      ['inbox', '⏸', 'Inbox', 'agents waiting on a decision from you'],
+      ['performance', '★', 'Performance', 'how well each agent is actually doing'],
+      ['runs', '⟲', 'Runs', 'complete history with full transcripts'],
+      ['security', '🛡', 'Security', 'audit trail, hard limits and spend caps'],
+      ['settings', '⚙', 'Settings', 'AI backends, keys and safety ceilings'],
+    ].map(([id, ico, label, desc]) => ({
+      sec: 'Go to', ico, title: label, desc,
+      hint: 'g ' + (id === 'settings' ? ',' : id[0]),
+      run: () => this.go(id),
+    }));
+
+    const agents = this.state.agents.map(a => ({
+      sec: 'Assign work to', ico: a.emoji || '◉', title: a.name,
+      desc: a.role || 'no speciality set',
+      run: () => this.taskDrawer(a.id),
+    }));
+
+    const wfOn = this.state.workforce.running;
+    const actions = [
+      { sec: 'Do', ico: '+', title: 'Assign work', desc: 'queue a task for an agent',
+        hint: 'n', run: () => this.taskDrawer() },
+      { sec: 'Do', ico: '◉', title: 'Hire an agent', desc: 'start from a template or blank',
+        run: () => { this.go('agents'); this.hireDrawer(); } },
+      { sec: 'Do', ico: wfOn ? '⏸' : '▶', title: wfOn ? 'Pause the workforce' : 'Start the workforce',
+        desc: wfOn ? 'agents stop picking up new work' : 'agents begin working their own queue',
+        run: () => this.toggleWorkforce() },
+      { sec: 'Do', ico: this.theme() === 'dark' ? '☀' : '☾',
+        title: this.theme() === 'dark' ? 'Switch to light' : 'Switch to dark',
+        desc: 'remembered on this browser', hint: 't', run: () => this.toggleTheme() },
+      { sec: 'Do', ico: '?', title: 'Keyboard shortcuts', desc: 'every key this console listens for',
+        hint: '?', run: () => this.shortcuts() },
+    ];
+    return [...actions, ...views, ...agents];
+  },
+
+  palette() {
+    this.closeDrawer();
+    this.kb.open = 'palette';
+    this.kb.items = this.palItems();
+    this.kb.sel = 0;
+    document.getElementById('overlay').innerHTML = `
+      <div class="scrim" onclick="App.closeOverlay()">
+        <div class="palette" onclick="event.stopPropagation()">
+          <div class="pal-in">
+            <span>◈</span>
+            <input id="palQ" placeholder="Search views, agents and actions…"
+                   autocomplete="off" spellcheck="false" oninput="App.palFilter()">
+          </div>
+          <div class="pal-list" id="palList"></div>
+          <div class="pal-foot">
+            <span><kbd>↑</kbd><kbd>↓</kbd> move</span>
+            <span><kbd>↵</kbd> open</span>
+            <span><kbd>esc</kbd> close</span>
+            <span style="margin-left:auto"><kbd>?</kbd> all shortcuts</span>
+          </div>
+        </div>
+      </div>`;
+    this.palPaint();
+    document.getElementById('palQ').focus();
+  },
+
+  palFilter() { this.kb.sel = 0; this.palPaint(); },
+
+  palPaint() {
+    const q = (document.getElementById('palQ')?.value || '').toLowerCase().trim();
+    const list = document.getElementById('palList');
+
+    // Subsequence matching so "asw" finds "Assign work" — but ranked, because a
+    // loose match on some other row's description should never outrank the row
+    // whose name you actually typed.
+    const subseq = s => {
+      let i = 0;
+      for (const ch of s) if (ch === q[i]) i++;
+      return i === q.length;
+    };
+    const score = it => {
+      const title = it.title.toLowerCase(), desc = (it.desc || '').toLowerCase();
+      if (title.startsWith(q)) return 0;
+      if (title.includes(q)) return 1;
+      if (desc.includes(q)) return 2;
+      if (subseq(title)) return 3;
+      if (subseq(desc) || subseq(it.sec.toLowerCase())) return 4;
+      return -1;
+    };
+
+    let shown;
+    if (!q) {
+      shown = this.kb.items.slice();
+    } else {
+      shown = this.kb.items
+        .map((it, i) => ({ it, i, s: score(it) }))
+        .filter(r => r.s >= 0)
+        .sort((a, b) => a.s - b.s || a.i - b.i)
+        .map(r => r.it);
+    }
+    this.kb.shown = shown;
+    if (this.kb.sel >= shown.length) this.kb.sel = Math.max(0, shown.length - 1);
+
+    if (!shown.length) {
+      list.innerHTML = `<div class="pal-empty">Nothing matches “${esc(q)}”.</div>`;
+      return;
+    }
+    let html = '', sec = '';
+    shown.forEach((it, i) => {
+      // Section headings only make sense in the unfiltered list; once results
+      // are ranked by relevance they no longer arrive grouped.
+      if (!q && it.sec !== sec) { sec = it.sec; html += `<div class="pal-sec">${esc(sec)}</div>`; }
+      html += `<div class="pal-row ${i === this.kb.sel ? 'on' : ''}" data-i="${i}"
+                    onmousemove="App.palHover(${i})" onclick="App.palRun(${i})">
+        <span class="pal-ico">${esc(it.ico)}</span>
+        <span class="pal-body">
+          <span class="pal-t">${esc(it.title)}</span>
+          <span class="pal-d">${q ? esc(it.sec) + ' · ' : ''}${esc(it.desc || '')}</span>
+        </span>
+        ${it.hint ? `<kbd class="pal-hint">${esc(it.hint)}</kbd>` : ''}
+      </div>`;
+    });
+    list.innerHTML = html;
+    list.querySelector('.pal-row.on')?.scrollIntoView({ block: 'nearest' });
+  },
+
+  palHover(i) {
+    if (i === this.kb.sel) return;
+    this.kb.sel = i; this.palPaint();
+  },
+
+  palKey(e) {
+    const n = (this.kb.shown || []).length;
+    if (e.key === 'ArrowDown' || (e.key === 'n' && e.ctrlKey)) {
+      e.preventDefault(); this.kb.sel = n ? (this.kb.sel + 1) % n : 0; this.palPaint();
+    } else if (e.key === 'ArrowUp' || (e.key === 'p' && e.ctrlKey)) {
+      e.preventDefault(); this.kb.sel = n ? (this.kb.sel - 1 + n) % n : 0; this.palPaint();
+    } else if (e.key === 'Enter') {
+      e.preventDefault(); this.palRun(this.kb.sel);
+    }
+  },
+
+  palRun(i) {
+    const it = (this.kb.shown || [])[i];
+    if (!it) return;
+    this.closeOverlay();
+    it.run();
+  },
+
+  /* -------------------------------------------------------- shortcut sheet */
+  shortcuts() {
+    this.kb.open = 'sheet';
+    const mod = this.isMac ? '⌘' : 'Ctrl';
+    const row = (label, keys) =>
+      `<div class="sheet-row"><span>${esc(label)}</span><div>${keys.map(k => `<kbd>${esc(k)}</kbd>`).join('')}</div></div>`;
+    document.getElementById('overlay').innerHTML = `
+      <div class="scrim" onclick="App.closeOverlay()">
+        <div class="sheet" onclick="event.stopPropagation()">
+          <div class="sheet-h"><b>Keyboard shortcuts</b><span>press <kbd>esc</kbd> to close</span></div>
+          <div class="sheet-grid">
+            <div>
+              <div class="sheet-sec">Anywhere</div>
+              ${row('Command palette', [mod, 'K'])}
+              ${row('Command palette', ['/'])}
+              ${row('Assign work', ['n'])}
+              ${row('Light / dark', ['t'])}
+              ${row('This sheet', ['?'])}
+              ${row('Close palette or drawer', ['esc'])}
+            </div>
+            <div>
+              <div class="sheet-sec">Go to</div>
+              ${row('Command', ['g', 'c'])}
+              ${row('Agents', ['g', 'a'])}
+              ${row('Work', ['g', 'w'])}
+              ${row('Inbox', ['g', 'i'])}
+              ${row('Performance', ['g', 'p'])}
+              ${row('Runs', ['g', 'r'])}
+              ${row('Security', ['g', 's'])}
+              ${row('Settings', ['g', ','])}
+            </div>
+          </div>
+        </div>
+      </div>`;
+  },
+
+  /* ================================================================ theme */
+  theme() { return document.documentElement.getAttribute('data-theme') || 'dark'; },
+
+  applyTheme(next) {
+    document.documentElement.setAttribute('data-theme', next);
+    try { localStorage.setItem('hermes.theme', next); } catch (e) { /* private mode */ }
+    const btn = document.getElementById('themeBtn');
+    if (btn) {
+      btn.textContent = next === 'dark' ? '☀' : '☾';
+      btn.title = next === 'dark' ? 'Switch to light' : 'Switch to dark';
+    }
+  },
+
+  toggleTheme() { this.applyTheme(this.theme() === 'dark' ? 'light' : 'dark'); },
+
+  /* ======================================================== notifications
+     An agent console is something you leave running. A run that finishes or an
+     approval that lands while the tab is in the background is exactly the thing
+     you wanted to be told about — but only ever after you ask for it.
+     ===================================================================== */
+  notifyOn() {
+    try { return localStorage.getItem('hermes.notify') === '1'; } catch (e) { return false; }
+  },
+
+  async askNotify() {
+    if (!('Notification' in window)) {
+      return this.toast('This browser has no notification support.', 'err');
+    }
+    if (this.notifyOn()) {
+      localStorage.setItem('hermes.notify', '0');
+      this.toast('Desktop notifications off.');
+      return this.render();
+    }
+    const ok = await Notification.requestPermission();
+    if (ok !== 'granted') return this.toast('Your browser refused notification permission.', 'err');
+    localStorage.setItem('hermes.notify', '1');
+    this.toast('Desktop notifications on — approvals and finished runs.', 'ok');
+    this.render();
+  },
+
+  notify(title, body) {
+    if (!this.notifyOn() || !('Notification' in window)) return;
+    if (Notification.permission !== 'granted') return;
+    if (!document.hidden) return;      // you are looking at it already
+    try {
+      const n = new Notification(title, { body, tag: 'hermes', icon: BRAND_ICON });
+      n.onclick = () => { window.focus(); n.close(); };
+    } catch (e) { /* some browsers refuse from a non-worker context */ }
+  },
+
+  /* ---------------------------------------------------------- run export */
+  exportRun(run) {
+    const lines = [
+      `# ${run.task_title || 'Hermes run'}`, '',
+      `- **Agent:** ${run.agent_name || run.agent_id}`,
+      `- **Model:** ${run.provider}/${run.model}`,
+      `- **Status:** ${run.status}`,
+      `- **Steps:** ${run.steps}`,
+      `- **Cost:** $${Number(run.cost || 0).toFixed(4)}`,
+      `- **Started:** ${new Date((run.started_at || 0) * 1000).toISOString()}`,
+      '', '## Transcript', '',
+    ];
+    for (const e of run.transcript || []) {
+      if (e.role === 'tool') {
+        lines.push(`### ${e.ok === false ? '✗' : '→'} ${e.tool}`, '', '```', String(e.content ?? '').trim(), '```', '');
+      } else {
+        lines.push(`### ${e.role}`, '', String(e.content ?? '').trim(), '');
+      }
+    }
+    if (run.result) lines.push('## Result', '', run.result, '');
+    const name = `hermes-run-${(run.id || 'export').slice(0, 8)}.md`;
+    const blob = new Blob([lines.join('\n')], { type: 'text/markdown' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    this.toast(`Saved ${name}`, 'ok');
+  },
+
   drawer(title, body, footer = '') {
     this.closeDrawer();
     document.body.insertAdjacentHTML('beforeend', `
@@ -1252,6 +1604,8 @@ const App = {
 };
 
 /* ------------------------------------------------------------- helpers */
+const BRAND_ICON = document.querySelector('link[rel="icon"]')?.getAttribute('href') || '';
+
 function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, c =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
