@@ -20,7 +20,7 @@ quality gate checks what it actually did before it is allowed to call anything f
 
 <br>
 
-**[Install](#install)** · **[First 60 seconds](#your-first-60-seconds)** · **[How do I…?](#how-do-i)** · **[The guide](#the-guide)** · **[Security](#security)** · **[Code map](#code-map)**
+**[Website ↗](https://at0m-b0mb.github.io/Hermes-Agent-Console/)** · **[Install](#install)** · **[First 60 seconds](#your-first-60-seconds)** · **[How do I…?](#how-do-i)** · **[The guide](#the-guide)** · **[Security](#security)** · **[Code map](#code-map)**
 
 <br>
 
