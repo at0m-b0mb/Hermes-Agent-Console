@@ -696,6 +696,54 @@ class Packaging(unittest.TestCase):
 
     @unittest.skipUnless(hasattr(sys, "stdlib_module_names"),
                          "sys.stdlib_module_names needs Python 3.10+")
+    def test_no_fstring_spans_a_line(self):
+        """A line break inside an f-string replacement field is Python 3.12+.
+
+        This shipped once: it compiled on 3.13 here and on 3.13 in CI, and blew
+        up as a SyntaxError on the 3.9 job. `ast.parse(feature_version=(3, 9))`
+        does not catch it — the tokenizer handles f-strings — so the check has
+        to look at the source.
+        """
+        offenders = []
+        root = Path(__file__).resolve().parent.parent
+        for path in list((root / "hermes").rglob("*.py")) + list((root / "tests").rglob("*.py")):
+            for lineno, line in enumerate(path.read_text().splitlines(), 1):
+                if self._unterminated_fstring(line):
+                    offenders.append(f"{path.relative_to(root)}:{lineno}: {line.strip()[:70]}")
+        self.assertEqual(offenders, [], "f-string opened and not closed on the same line")
+
+    @staticmethod
+    def _unterminated_fstring(line: str) -> bool:
+        """True if a single-quoted f-string opens on this line and does not close."""
+        i, n = 0, len(line)
+        while i < n:
+            if line[i] == "#":
+                return False                     # a comment; nothing real after it
+            if line[i] in "\"'":
+                quote = line[i]
+                triple = line[i:i + 3] == quote * 3
+                is_f = i > 0 and line[i - 1] in "fF" and (i < 2 or not line[i - 2].isalnum())
+                if triple:
+                    end = line.find(quote * 3, i + 3)
+                    if end == -1:
+                        return False             # triple-quoted strings may span lines
+                    i = end + 3
+                    continue
+                j = i + 1
+                while j < n:
+                    if line[j] == "\\":
+                        j += 2
+                        continue
+                    if line[j] == quote:
+                        break
+                    j += 1
+                if j >= n:                       # never closed on this line
+                    return bool(is_f)
+                i = j + 1
+                continue
+            i += 1
+        return False
+
     def test_no_third_party_imports(self):
         """Zero dependencies is a promise; assert it rather than trust it."""
         import ast

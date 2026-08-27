@@ -155,9 +155,11 @@ def _print_security_posture() -> None:
         else (allowed or "loopback only"))
 
     proxy = db.setting("server.trusted_proxy", "")
-    print(f"   {DIM}·{OFF} {'Trusted proxy':<26} "
-          f"{DIM}{proxy or 'none — X-Forwarded-For is ignored, which is right '
-                          'unless a proxy is in front'}{OFF}")
+    # Built outside the f-string: a line break inside a replacement field is
+    # only legal from Python 3.12, and this has to run on 3.9.
+    proxy_detail = proxy or ("none — X-Forwarded-For is ignored, "
+                             "which is right unless a proxy is in front")
+    print(f"   {DIM}·{OFF} {'Trusted proxy':<26} {DIM}{proxy_detail}{OFF}")
 
     wide, shell_agents = [], []
     home = str(Path.home())
