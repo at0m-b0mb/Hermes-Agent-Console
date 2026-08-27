@@ -1,0 +1,495 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hermes — Agent Operations Console</title>
+<meta name="description" content="Hire AI agents, give them jobs, watch them work. A local-first console where agents own a queue, use real tools, and pass a quality gate before any task counts as done. Zero dependencies, runs fully offline.">
+<link rel="icon" href="mark.svg">
+<meta name="theme-color" content="#0B0E1D">
+<meta name="color-scheme" content="dark light">
+
+<meta property="og:title" content="Hermes — Agent Operations Console">
+<meta property="og:description" content="Hire AI agents. Give them jobs. Watch them work. Zero dependencies, runs fully offline.">
+<meta property="og:type" content="website">
+<meta property="og:image" content="https://at0m-b0mb.github.io/Hermes-Agent-Console/shots/command.png">
+<meta name="twitter:card" content="summary_large_image">
+
+<style>
+/* ============================================================
+   The console's own tokens, so the site and the app are visibly
+   the same product. No fonts, no scripts, no dependencies —
+   the same promise the software makes.
+   ============================================================ */
+:root {
+  --ink:#0B0E1D; --surface:#11142A; --surface-2:#171B38; --surface-3:#1E2347;
+  --line:#272D57; --line-soft:#1C2145;
+  --indigo:#5C6CF2; --indigo-dim:#3B47A8;
+  --gold:#F5B93B; --gold-ink:#F5B93B; --gold-dim:#A87C1E;
+  --text:#E9EBFA; --text-2:#A8AFD8; --muted:#6E76A8;
+  --green:#4FD1A5; --violet:#A87CF0; --red:#F2686B;
+  --r:14px; --r-lg:20px;
+  --shadow:0 20px 60px rgba(0,0,0,.5);
+  --emoji:"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif;
+  --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,system-ui,sans-serif,var(--emoji);
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  --maxw:1120px;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --ink:#F1F3FB; --surface:#FFFFFF; --surface-2:#F7F8FD; --surface-3:#ECEFF9;
+    --line:#D9DEEF; --line-soft:#E6EAF6;
+    --indigo:#4655D8; --indigo-dim:#8E97E8; --gold-ink:#9A6B08; --gold-dim:#C58F1B;
+    --text:#14172D; --text-2:#474E75; --muted:#737AA3;
+    --green:#12876A; --violet:#7B4FC4; --red:#C8393D;
+    --shadow:0 16px 44px rgba(24,29,64,.12);
+  }
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{
+  font-family:var(--font); background:var(--ink); color:var(--text);
+  font-size:16px; line-height:1.65; -webkit-font-smoothing:antialiased;
+  overflow-x:hidden;
+}
+body::before{
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  background:
+    radial-gradient(900px 520px at 12% -6%, rgba(92,108,242,.18), transparent 62%),
+    radial-gradient(760px 460px at 92% 8%, rgba(245,185,59,.08), transparent 60%);
+}
+main,header,footer{position:relative;z-index:1}
+.wrap{max-width:var(--maxw);margin:0 auto;padding:0 24px}
+a{color:var(--indigo);text-decoration:none}
+a:hover{text-decoration:underline}
+:where(a,button):focus-visible{outline:2px solid var(--indigo);outline-offset:3px;border-radius:8px}
+
+/* ---------- nav ---------- */
+.nav{
+  position:sticky; top:0; z-index:30; backdrop-filter:blur(12px);
+  background:color-mix(in srgb, var(--ink) 78%, transparent);
+  border-bottom:1px solid var(--line-soft);
+}
+.nav .wrap{display:flex;align-items:center;gap:26px;height:62px}
+.nav .brand{display:flex;align-items:center;gap:10px;font-weight:800;letter-spacing:.14em;font-size:14px;color:var(--text)}
+.nav .brand img{width:26px;height:26px;border-radius:7px}
+.nav .links{margin-left:auto;display:flex;gap:22px;align-items:center;font-size:14px}
+.nav .links a{color:var(--text-2)}
+.nav .links a:hover{color:var(--text);text-decoration:none}
+@media (max-width:760px){ .nav .links a.hide-sm{display:none} }
+
+/* ---------- hero ---------- */
+.hero{padding:74px 0 40px;text-align:center}
+.hero img.logo{width:min(660px,100%);height:auto;margin-bottom:34px}
+.hero h1{font-size:clamp(28px,4.4vw,46px);line-height:1.15;letter-spacing:-.02em;font-weight:800;margin-bottom:18px}
+.hero p.lede{font-size:clamp(16px,1.9vw,19px);color:var(--text-2);max-width:62ch;margin:0 auto 30px}
+.hero p.lede b{color:var(--text);font-weight:650}
+
+.cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-bottom:16px}
+.btn{
+  display:inline-flex;align-items:center;gap:9px;height:46px;padding:0 22px;border-radius:12px;
+  font-weight:650;font-size:15px;border:1px solid var(--line);background:var(--surface-2);color:var(--text);
+  transition:border-color .15s,transform .15s,background .15s;
+}
+.btn:hover{text-decoration:none;border-color:var(--indigo-dim);transform:translateY(-1px)}
+.btn-primary{
+  background:linear-gradient(180deg,var(--gold) 0%,#E0A227 100%);
+  color:#1B1400;border-color:var(--gold-dim);
+}
+.btn-primary:hover{background:linear-gradient(180deg,#FFC94F 0%,var(--gold) 100%);border-color:var(--gold)}
+
+.install{
+  display:flex;align-items:center;gap:14px;max-width:760px;margin:26px auto 0;
+  background:var(--surface);border:1px solid var(--line);border-radius:12px;
+  padding:15px 18px;font-family:var(--mono);font-size:13px;text-align:left;
+  line-height:1.5;box-shadow:var(--shadow);
+}
+.install .p{color:var(--green);user-select:none;align-self:flex-start;padding-top:1px}
+.install code{color:var(--text-2);white-space:pre-wrap;word-break:break-all}
+.install code b{color:var(--text);font-weight:400}
+.subtle{color:var(--muted);font-size:13.5px;margin-top:14px}
+
+.badges{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:26px}
+.badge{
+  font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;font-weight:700;
+  padding:5px 11px;border-radius:20px;border:1px solid var(--line);color:var(--text-2);
+  background:var(--surface-2);
+}
+.badge.g{color:var(--green);border-color:rgba(79,209,165,.34)}
+.badge.a{color:var(--gold-ink);border-color:rgba(245,185,59,.34)}
+.badge.v{color:var(--violet);border-color:rgba(168,124,240,.34)}
+
+/* ---------- shell ---------- */
+section{padding:64px 0;border-top:1px solid var(--line-soft)}
+section:first-of-type{border-top:0}
+.eyebrow{
+  font-size:11.5px;letter-spacing:.18em;text-transform:uppercase;font-weight:750;
+  color:var(--gold-ink);margin-bottom:12px;
+}
+h2{font-size:clamp(24px,3vw,33px);letter-spacing:-.015em;line-height:1.2;margin-bottom:14px;font-weight:750}
+h3{font-size:17px;margin-bottom:7px;font-weight:650}
+.sub{color:var(--text-2);max-width:66ch;margin-bottom:34px;font-size:16.5px}
+
+/* ---------- shot ---------- */
+figure{margin:0}
+.shot{
+  border:1px solid var(--line);border-radius:var(--r-lg);overflow:hidden;
+  box-shadow:var(--shadow);background:var(--surface);
+}
+.shot img{display:block;width:100%;height:auto}
+figcaption{color:var(--muted);font-size:13.5px;margin-top:12px;text-align:center}
+
+/* ---------- grids ---------- */
+.grid{display:grid;gap:16px}
+.g2{grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
+.g3{grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+.card{
+  background:var(--surface);border:1px solid var(--line-soft);border-radius:var(--r);
+  padding:22px 22px 24px;transition:border-color .15s,transform .15s;
+}
+.card:hover{border-color:var(--line);transform:translateY(-2px)}
+.card .ico{
+  width:38px;height:38px;border-radius:11px;display:grid;place-items:center;
+  background:var(--surface-3);font-size:17px;margin-bottom:14px;
+}
+.card p{color:var(--text-2);font-size:14.5px}
+.card p code, li code, p code{
+  font-family:var(--mono);font-size:.88em;background:var(--surface-3);
+  padding:1px 5px;border-radius:5px;color:var(--text);
+}
+
+/* ---------- flow ---------- */
+.flow{
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);
+  padding:26px;overflow-x:auto;
+}
+.flow pre{
+  font-family:var(--mono);font-size:13px;line-height:1.75;color:var(--text-2);
+  white-space:pre;
+}
+.flow pre b{color:var(--gold-ink);font-weight:600}
+.flow pre i{color:var(--green);font-style:normal}
+.flow pre u{color:var(--violet);text-decoration:none}
+
+/* ---------- table ---------- */
+.tbl{width:100%;border-collapse:collapse;font-size:14.5px;overflow:hidden;
+  border:1px solid var(--line-soft);border-radius:var(--r)}
+.tbl th,.tbl td{padding:12px 16px;text-align:left;border-bottom:1px solid var(--line-soft)}
+.tbl th{font-size:11.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);
+  background:var(--surface-2);font-weight:700}
+.tbl tr:last-child td{border-bottom:0}
+.tbl td{color:var(--text-2)}
+.tbl td:first-child{color:var(--text);font-weight:600}
+.tbl .mono{font-family:var(--mono);font-size:13px}
+.pill{font-size:11px;font-weight:750;padding:3px 9px;border-radius:20px;letter-spacing:.04em}
+.pill.best{background:rgba(79,209,165,.16);color:var(--green)}
+.pill.ok{background:rgba(92,108,242,.16);color:var(--indigo)}
+.pill.mid{background:rgba(245,185,59,.16);color:var(--gold-ink)}
+.scroll{overflow-x:auto}
+
+/* ---------- floor ---------- */
+.floor{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);padding:28px}
+.floor ul{list-style:none;display:grid;gap:14px}
+.floor li{display:flex;gap:13px;align-items:flex-start;font-size:15px;color:var(--text-2)}
+.floor li span.m{color:var(--green);flex:none;font-weight:700}
+.floor li b{color:var(--text);font-weight:650}
+
+.note{
+  border-left:3px solid var(--gold-dim);background:var(--surface-2);
+  padding:16px 20px;border-radius:0 var(--r) var(--r) 0;color:var(--text-2);font-size:15px;
+}
+.note b{color:var(--text)}
+
+/* ---------- footer ---------- */
+footer{border-top:1px solid var(--line-soft);padding:44px 0 56px;text-align:center;color:var(--muted);font-size:14px}
+footer img{width:44px;height:44px;margin-bottom:16px;opacity:.9}
+footer .row{display:flex;gap:20px;justify-content:center;flex-wrap:wrap;margin-bottom:16px}
+
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+}
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="wrap">
+    <a class="brand" href="#top"><img src="mark.svg" alt="">HERMES</a>
+    <div class="links">
+      <a href="#what" class="hide-sm">What it is</a>
+      <a href="#console" class="hide-sm">The console</a>
+      <a href="#security">Security</a>
+      <a href="#models" class="hide-sm">Models</a>
+      <a href="#install">Install</a>
+      <a href="https://github.com/at0m-b0mb/Hermes-Agent-Console">GitHub&nbsp;↗</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero" id="top">
+  <div class="wrap">
+    <img class="logo" src="logo.svg" alt="Hermes — Agent Operations Console">
+    <h1>Hire AI agents. Give them jobs.<br>Watch them work.</h1>
+    <p class="lede">
+      Most AI tools are a button you press: you ask, it answers, it forgets.
+      <b>Hermes is a console where an agent owns a queue and works it without you</b> — and a
+      quality gate checks what it actually did before it is allowed to call anything finished.
+    </p>
+
+    <div class="cta">
+      <a class="btn btn-primary" href="#install">Install it</a>
+      <a class="btn" href="https://github.com/at0m-b0mb/Hermes-Agent-Console">Read the source</a>
+    </div>
+
+    <div class="install">
+      <span class="p">$</span>
+      <code>curl -fsSL https://raw.githubusercontent.com/at0m-b0mb/Hermes-Agent-Console/main/install.sh | bash</code>
+    </div>
+    <p class="subtle">Then <code style="font-family:var(--mono)">hermes</code>. Your browser opens at localhost:4317. That is the whole setup.</p>
+
+    <div class="badges">
+      <span class="badge g">Zero dependencies</span>
+      <span class="badge v">Runs fully offline</span>
+      <span class="badge a">83 tests</span>
+      <span class="badge">Python 3.9+</span>
+      <span class="badge">MIT</span>
+    </div>
+  </div>
+</header>
+
+<main>
+
+<section id="what">
+  <div class="wrap">
+    <p class="eyebrow">What this actually is</p>
+    <h2>An agent that owns a queue</h2>
+    <p class="sub">
+      You describe a job once. The dispatcher hands it to whoever is free and on shift. The agent
+      uses real tools — reads files, runs commands, fetches pages, sends mail — and when it claims
+      to be done, a second model checks whether it did the work or merely described doing it.
+      That last part is the difference between an agent that <em>reports</em> success and one that
+      achieved it.
+    </p>
+
+    <div class="flow">
+<pre>  You                Dispatcher            Agent                <u>Quality gate</u>
+   │                     │                   │                       │
+   ├─ "summarise these" ─┤                   │                       │
+   │                     ├── picks it up ───▶│                       │
+   │                     │                   ├─ <b>read_file</b>            │
+   │                     │                   ├─ <b>read_file</b>            │
+   │                     │                   ├─ <b>write_file</b>           │
+   │                     │                   ├── "I'm done" ────────▶│
+   │                     │                   │◀── <u>"no, item 3 is</u> ────┤
+   │                     │                   │     <u>unaddressed"</u>       │
+   │                     │                   ├─ <b>write_file</b>           │
+   │                     │                   ├── "done" ────────────▶│
+   │◀──── result ────────┴───────────────────┴──────── <i>passed</i> ───────┘</pre>
+    </div>
+  </div>
+</section>
+
+<section id="console">
+  <div class="wrap">
+    <p class="eyebrow">The console</p>
+    <h2>Everything they are doing, and the bit waiting on you</h2>
+    <p class="sub">
+      A live view of the whole workforce at <code>localhost:4317</code>. Running tasks carry a
+      ticking clock, anything blocked on your decision says so, and every tool call streams into
+      the activity feed as it happens.
+    </p>
+    <figure>
+      <div class="shot"><img src="shots/command.png" alt="The Hermes command view showing agent counts, two escalations waiting on the operator, a live activity feed and tasks in progress" loading="lazy"></div>
+      <figcaption>Command — four agents working, two waiting on a decision.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <p class="eyebrow">The board</p>
+    <h2>Queued, running, done, and the ones that need you</h2>
+    <p class="sub">
+      Filter by title, brief or agent. Re-run any finished task with its brief prefilled, because
+      the reason you re-run something is usually that one word needed changing.
+    </p>
+    <figure>
+      <div class="shot"><img src="shots/work.png" alt="The work board with queued, in progress, completed and needs attention columns" loading="lazy"></div>
+      <figcaption>Live elapsed clocks on everything that is running.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <p class="eyebrow">Keyboard first</p>
+    <h2>⌘K reaches everything</h2>
+    <p class="sub">
+      Every view, every agent, every action worth reaching. Results are ranked, so the thing whose
+      name you typed comes first. <code>g</code> then a letter jumps between views, <code>n</code>
+      assigns work, <code>t</code> switches theme, <code>?</code> lists the lot.
+    </p>
+    <figure>
+      <div class="shot"><img src="shots/palette.png" alt="The command palette listing actions, views and agents with keyboard hints" loading="lazy"></div>
+      <figcaption>The palette, with the shortcut for each row on the right.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <p class="eyebrow">Receipts</p>
+    <h2>Every run keeps its whole transcript</h2>
+    <p class="sub">
+      Each tool call, the arguments it was given, and what came back. Export any run as Markdown.
+      Nothing an agent did is a black box afterwards.
+    </p>
+    <figure>
+      <div class="shot"><img src="shots/run.png" alt="A run drawer showing a full transcript of tool calls and their output" loading="lazy"></div>
+      <figcaption>The run drawer — scoring, result, and the full transcript underneath.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <p class="eyebrow">What you get</p>
+    <h2>The parts that make it a workforce</h2>
+    <div class="grid g3" style="margin-top:30px">
+      <div class="card"><div class="ico">◉</div><h3>Agents with a posture</h3>
+        <p>Name, speciality, standing instructions, model, and a capability grant per tool. Three ship ready to use; eight more templates are a click away.</p></div>
+      <div class="card"><div class="ico">⚖</div><h3>A quality gate</h3>
+        <p>Always on. Before a task can be called finished, a second pass checks the work was performed rather than described, and names the specific gap when it was not.</p></div>
+      <div class="card"><div class="ico">⏱</div><h3>Standing duties</h3>
+        <p>Anything on a cadence — an hourly check, a daily summary, a weekly tidy-up. Hermes creates the task when it comes due and the owning agent picks it up.</p></div>
+      <div class="card"><div class="ico">⏸</div><h3>Escalation, not silence</h3>
+        <p>A stuck agent asks you a question instead of guessing. Answer it and the task goes back in the queue with your answer attached.</p></div>
+      <div class="card"><div class="ico">★</div><h3>Scoring</h3>
+        <p>A judge model grades correctness, completeness, efficiency and safety. Your own 0–100 rating always wins.</p></div>
+      <div class="card"><div class="ico">⌨</div><h3>A terminal that keeps up</h3>
+        <p><code>hermes shell</code> for SSH sessions with no browser, <code>hermes run</code> for one-shot jobs, <code>hermes tasks</code> for the board, <code>hermes audit</code> for the chain.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="security">
+  <div class="wrap">
+    <p class="eyebrow">Security</p>
+    <h2>Built to run on a machine that matters</h2>
+    <p class="sub">
+      Most of the model is fixed in code, not asked of the model in a prompt. No autonomy level,
+      grant setting, or cleverly-worded instruction changes any of it.
+    </p>
+
+    <div class="floor">
+      <ul>
+        <li><span class="m">✓</span><span><b>23 protected path patterns.</b> <code>~/.ssh</code>, <code>~/.aws</code>, <code>.env</code> files, <code>*.pem</code>, keychains. A fully autonomous agent scoped to your whole home directory still cannot read one — and cannot reach them through the grep tool either, because a grep is a read.</span></li>
+        <li><span class="m">✓</span><span><b>18 blocked command patterns.</b> <code>rm -rf</code>, <code>sudo</code>, <code>curl | sh</code>, disk writes, firewall changes, force pushes, history tampering.</span></li>
+        <li><span class="m">✓</span><span><b>A human on every outgoing email.</b> At every autonomy level, at every capability setting, and even behind <code>--yes</code>. Enforced at the single chokepoint every tool call passes through, so an injection can hijack an agent completely and still not get one byte out.</span></li>
+        <li><span class="m">✓</span><span><b>Untrusted content is framed and scanned.</b> Anything read from a web page or an inbox is wrapped as data with no authority, and known injection patterns are surfaced to you rather than hidden.</span></li>
+        <li><span class="m">✓</span><span><b>Connection and request ceilings.</b> 64 connections, 8 per client, a 20-second timeout and a 2 MB body cap — so a client that never authenticates cannot park every worker thread.</span></li>
+        <li><span class="m">✓</span><span><b>A lockout that cannot be turned on you.</b> The session token is checked before the brute-force lockout is consulted, so somebody spraying wrong tokens can never lock you out of your own console.</span></li>
+        <li><span class="m">✓</span><span><b>Tamper-evident audit chain.</b> Every tool call, approval, key change and run is hash-linked. Editing or deleting any row breaks the chain and the console says so.</span></li>
+        <li><span class="m">✓</span><span><b>Encrypted key vault, secret redaction, spend ceilings</b>, loopback-only binding, a strict CSP, and no version disclosure.</span></li>
+      </ul>
+    </div>
+
+    <div class="note" style="margin-top:22px">
+      <b>What it does not claim.</b> The vault protects against casual disclosure, not against
+      somebody who already has your login session. Injection framing reduces risk; it does not
+      eliminate it — which is exactly why irreversible actions need a human instead of trusting the
+      model. An agent granted <code>run_shell</code> can do anything your user can, minus the
+      blocked patterns. Grant it deliberately.
+    </div>
+
+    <figure style="margin-top:30px">
+      <div class="shot"><img src="shots/security.png" alt="The security view showing audit chain status, hard limits and spend caps" loading="lazy"></div>
+      <figcaption>The chain is re-walked on every load. <code>hermes doctor</code> reports the rest of the posture.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section id="models">
+  <div class="wrap">
+    <p class="eyebrow">Which model</p>
+    <h2>Being good at chat and being able to drive tools are different skills</h2>
+    <p class="sub">
+      The gap is enormous at small sizes, and you would rather not find out halfway through a real
+      job. <code>hermes bench</code> runs two fixed scenarios against each model you have and grades
+      what ended up <em>on disk</em> — not what the model said it did.
+    </p>
+
+    <div class="scroll">
+      <table class="tbl">
+        <thead><tr><th>Model</th><th>Score</th><th>Time</th><th>Verdict</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">qwen2.5:latest</td><td>17 / 17</td><td>33 s</td><td><span class="pill best">Excellent</span> drives the loop cleanly</td></tr>
+          <tr><td class="mono">qwen2.5:7b</td><td>16 / 17</td><td>41 s</td><td><span class="pill ok">Good</span> fine for everyday work</td></tr>
+          <tr><td class="mono">llama3.1:latest</td><td>15 / 17</td><td>77 s</td><td><span class="pill mid">Good, slower</span> uses tools but does not reliably carry the result into the artefact</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="subtle" style="text-align:left;margin-top:14px">
+      Measured on a local Ollama install. Run <code>hermes bench</code> to get the same table for your own machine.
+    </p>
+
+    <div class="grid g2" style="margin-top:30px">
+      <div class="card"><div class="ico">🖥️</div><h3>Runs fully offline</h3>
+        <p>With Ollama and no API key, every feature on this page works. Nothing leaves your machine.</p></div>
+      <div class="card"><div class="ico">🔌</div><h3>Six backends, chosen per agent</h3>
+        <p>Ollama, Groq, Gemini, Anthropic, OpenAI, or any OpenAI-compatible endpoint — LM Studio, vLLM, OpenRouter. A cheap local model for routine work, a strong one for the hard jobs.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="install">
+  <div class="wrap">
+    <p class="eyebrow">Install</p>
+    <h2>No pip, no venv, no lockfile</h2>
+    <p class="sub">
+      Everything is Python standard library. The installer cannot fail on a broken wheel because
+      there is nothing to build — and a test walks every import in the package to make sure that
+      stays true.
+    </p>
+
+    <div class="install" style="margin-left:0">
+      <span class="p">$</span>
+      <code>curl -fsSL https://raw.githubusercontent.com/at0m-b0mb/Hermes-Agent-Console/main/install.sh | bash</code>
+    </div>
+
+    <div class="grid g3" style="margin-top:26px">
+      <div class="card"><h3>1 · Give it a brain</h3>
+        <p><code>ollama pull qwen2.5</code> for free and offline, or <code>hermes key groq</code> for a fast free tier.</p></div>
+      <div class="card"><h3>2 · Start it</h3>
+        <p><code>hermes</code> — the console opens in your browser. <code>hermes shell</code> if you are on SSH.</p></div>
+      <div class="card"><h3>3 · Give somebody a job</h3>
+        <p>Press <code>n</code>, or <code>hermes run Ledger "…" --yes</code> from the terminal.</p></div>
+    </div>
+
+    <p class="subtle" style="text-align:left;margin-top:22px">
+      Prefer not to pipe a script into bash? Sensible —
+      <a href="https://github.com/at0m-b0mb/Hermes-Agent-Console#install">clone it and read the installer first</a>.
+      Everything Hermes owns lives in <code>~/.hermes</code>, so uninstalling is one <code>rm -rf</code>.
+    </p>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <img src="mark.svg" alt="">
+    <div class="row">
+      <a href="https://github.com/at0m-b0mb/Hermes-Agent-Console">Source</a>
+      <a href="https://github.com/at0m-b0mb/Hermes-Agent-Console/blob/main/README.md">Documentation</a>
+      <a href="https://github.com/at0m-b0mb/Hermes-Agent-Console/blob/main/CHANGELOG.md">Changelog</a>
+      <a href="https://github.com/at0m-b0mb/Hermes-Agent-Console/releases">Releases</a>
+      <a href="https://github.com/at0m-b0mb/Hermes-Agent-Console/blob/main/LICENSE">MIT</a>
+    </div>
+    <p>Your data, your machine, your agents.<br>
+      Nothing leaves your computer except calls to the AI backends you configure yourself.</p>
+  </div>
+</footer>
+
+</body>
+</html>

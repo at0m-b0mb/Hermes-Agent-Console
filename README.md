@@ -16,7 +16,7 @@ quality gate checks what it actually did before it is allowed to call anything f
 [![Python](https://img.shields.io/badge/Python-3.9%2B-5C6CF2?style=for-the-badge&labelColor=0B0E1D)](https://python.org)
 [![Dependencies](https://img.shields.io/badge/Dependencies-zero-4FD1A5?style=for-the-badge&labelColor=0B0E1D)](#why-zero-dependencies)
 [![Offline](https://img.shields.io/badge/Runs-fully%20offline-A87CF0?style=for-the-badge&labelColor=0B0E1D)](#pick-a-brain-ai-backends)
-[![Tests](https://img.shields.io/badge/Tests-75%20passing-4FD1A5?style=for-the-badge&labelColor=0B0E1D)](#verification)
+[![Tests](https://img.shields.io/badge/Tests-83%20passing-4FD1A5?style=for-the-badge&labelColor=0B0E1D)](#verification)
 
 <br>
 
@@ -797,7 +797,7 @@ python3 tests/test_hermes.py
 ```
 
 ```
-Ran 75 tests in 1.1s
+Ran 83 tests in 1.1s
 
 OK
 ```
@@ -877,6 +877,38 @@ A supervised agent asks before every write, and it is waiting for you. The promp
 right in the terminal — answer `y` or `n`. If you are running from a script with no
 terminal attached, requests are denied immediately with a note; use `--yes` to approve as
 they come up.
+
+</details>
+
+<details>
+<summary><b>"certificate verify failed" — on web pages, email, or a cloud backend</b></summary>
+
+<br>
+
+Not a problem with the site. Python could not find any root certificates to check it
+against, so *everything* that leaves the machine fails at once — `http_fetch`, IMAP and
+SMTP, and every cloud AI backend.
+
+On a macOS python.org build this is the usual cause: the interpreter is pointed at a
+`cert.pem` that only appears once you run the installer command shipped beside it, and
+almost nobody does.
+
+```bash
+hermes doctor        # the Certificates line says where the roots came from, or that there are none
+```
+
+Hermes looks for a usable bundle on its own — the OS store, `SSL_CERT_FILE`, the common
+OpenSSL locations, the bundle your Python shipped with, and finally the macOS system
+keychain — so this normally just works. If it reports none, do one of:
+
+```bash
+open "/Applications/Python 3.13/Install Certificates.command"   # macOS, python.org build
+sudo apt install ca-certificates                                # Debian / Ubuntu
+export SSL_CERT_FILE=/etc/ssl/cert.pem                          # point it at one yourself
+```
+
+Hermes will not fall back to unverified TLS. An agent console that reads web pages and
+mail is the wrong place to stop checking who it is talking to.
 
 </details>
 

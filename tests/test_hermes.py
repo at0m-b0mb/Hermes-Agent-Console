@@ -553,6 +553,84 @@ class Autonomy(unittest.TestCase):
 
 # ------------------------------------------------------- exposed to a network
 
+# ---------------------------------------------------- talking to the outside
+
+class CertificateTrust(unittest.TestCase):
+    """Every TLS surface must verify, and must say something useful when it cannot.
+
+    On a macOS python.org build the interpreter is pointed at a cert.pem that
+    only exists once somebody runs the installer command shipped beside it.
+    Nobody does, so the default context loads zero roots and everything that
+    leaves the machine fails at once: web pages, IMAP, SMTP and every cloud
+    backend. All of it looked like four unrelated bugs.
+    """
+
+    def setUp(self):
+        from hermes import tlstrust
+        self.tls = tlstrust
+        tlstrust.reset()
+
+    def tearDown(self):
+        self.tls.reset()
+
+    def test_a_context_with_roots_in_it(self):
+        ctx = self.tls.context()
+        self.assertGreater(len(ctx.get_ca_certs()), 0, "a context with no roots verifies nothing")
+
+    def test_verification_stays_on(self):
+        """The tempting 'fix' is CERT_NONE. That turns a loud failure into a
+        silent one, in the component that reads pages strangers wrote."""
+        import ssl as _ssl
+        ctx = self.tls.context()
+        self.assertEqual(ctx.verify_mode, _ssl.CERT_REQUIRED)
+        self.assertTrue(ctx.check_hostname)
+
+    def test_every_tls_caller_uses_it(self):
+        """A call site that builds its own default context is a call site that
+        will start failing again on the next machine."""
+        import inspect
+        from hermes import providers
+        from hermes.runtime import mail, tools
+        for mod in (providers, mail, tools):
+            src = inspect.getsource(mod)
+            self.assertNotIn("ssl.create_default_context()", src,
+                             f"{mod.__name__} builds its own context instead of using tlstrust")
+
+    def test_describe_never_raises(self):
+        info = self.tls.describe()
+        self.assertIn("ok", info)
+        self.assertIn("detail", info)
+
+    def test_a_verification_failure_explains_itself(self):
+        raw = Exception("[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: "
+                        "unable to get local issuer certificate")
+        friendly = self.tls.friendly(raw)
+        self.assertIn("certificate-trust problem on this machine", friendly)
+        self.assertIn("SSL_CERT_FILE", friendly)
+
+    def test_an_unrelated_error_is_left_alone(self):
+        self.assertEqual(self.tls.friendly(Exception("Connection refused")), "Connection refused")
+
+    def test_no_trust_store_says_what_to_do(self):
+        import ssl as _ssl
+        real, paths = _ssl.create_default_context, self.tls.BUNDLE_PATHS
+        interp, keys = self.tls._interpreter_bundle, self.tls._keychain_roots
+        _ssl.create_default_context = lambda *a, **k: _ssl.SSLContext(_ssl.PROTOCOL_TLS_CLIENT)
+        self.tls.BUNDLE_PATHS = ()
+        self.tls._interpreter_bundle = lambda: ""
+        self.tls._keychain_roots = lambda: ""
+        self.tls.reset()
+        try:
+            with self.assertRaises(self.tls.NoTrustStore) as caught:
+                self.tls.context()
+            self.assertIn("SSL_CERT_FILE", str(caught.exception))
+        finally:
+            _ssl.create_default_context = real
+            self.tls.BUNDLE_PATHS, self.tls._interpreter_bundle = paths, interp
+            self.tls._keychain_roots = keys
+            self.tls.reset()
+
+
 class ConnectionCeilings(unittest.TestCase):
     """One client must not be able to take the console away from everyone else.
 

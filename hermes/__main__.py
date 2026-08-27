@@ -11,7 +11,7 @@ import threading
 import time
 import webbrowser
 
-from . import __engine__, __version__, config, db, providers, security
+from . import __engine__, __version__, config, db, providers, security, tlstrust
 from .runtime import engine, evaluator, tools, workforce
 
 GOLD = "\033[38;5;179m"
@@ -104,6 +104,16 @@ def cmd_doctor(args) -> int:
     print(f"  {BOLD}Home{OFF}        {config.HOME}")
     print(f"  {BOLD}Database{OFF}    {config.DB_PATH} "
           f"({'exists' if config.DB_PATH.exists() else 'will be created'})")
+    tls = tlstrust.describe()
+    dot = f"{GREEN}●{OFF}" if tls["ok"] else f"{RED}○{OFF}"
+    print(f"\n  {BOLD}Certificates{OFF}")
+    print(f"   {dot} {tls['detail']}")
+    if not tls["ok"]:
+        # Everything that leaves this machine is broken until this is fixed, so
+        # print the actual remedy rather than leaving them to search for it.
+        for line in tls["remedy"].splitlines():
+            print(f"     {GOLD}{line}{OFF}")
+
     print(f"\n  {BOLD}Backends{OFF}")
     for p in providers.catalogue():
         dot = f"{GREEN}●{OFF}" if p["ok"] else f"{RED}○{OFF}"

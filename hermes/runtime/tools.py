@@ -20,7 +20,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-from .. import config, db, security
+from .. import config, db, security, tlstrust
 
 ALLOW, ASK, DENY = "allow", "ask", "deny"
 
@@ -355,7 +355,11 @@ class _AllowlistedRedirects(urllib.request.HTTPRedirectHandler):
 def t_http_fetch(agent, args, ctx):
     url = _check_host(agent, args["url"])
     req = urllib.request.Request(url, headers={"User-Agent": "Hermes-OpenClaw/1.0"})
-    opener = urllib.request.build_opener(_AllowlistedRedirects(agent))
+    try:
+        https = urllib.request.HTTPSHandler(context=tlstrust.context())
+    except tlstrust.NoTrustStore as e:
+        raise ToolError(str(e)) from None
+    opener = urllib.request.build_opener(_AllowlistedRedirects(agent), https)
     try:
         with opener.open(req, timeout=30) as r:
             body = r.read(500_000).decode(errors="replace")
@@ -363,7 +367,7 @@ def t_http_fetch(agent, args, ctx):
     except urllib.error.HTTPError as e:
         raise ToolError(f"HTTP {e.code} fetching {url}") from None
     except urllib.error.URLError as e:
-        raise ToolError(f"Could not fetch {url}: {e.reason}") from None
+        raise ToolError(f"Could not fetch {url}: {tlstrust.friendly(e.reason)}") from None
     source = f"web page {final}" if final != url else f"web page {url}"
     return security.wrap_untrusted(body[:40_000], source)
 

@@ -29,7 +29,7 @@ import smtplib
 import ssl
 from email.header import decode_header, make_header
 
-from .. import db, security
+from .. import db, security, tlstrust
 
 PRESETS = {
     "gmail":   {"label": "Gmail", "imap": ("imap.gmail.com", 993), "smtp": ("smtp.gmail.com", 465),
@@ -90,15 +90,21 @@ def _decode(value) -> str:
 def _connect_imap(c: dict) -> imaplib.IMAP4_SSL:
     try:
         m = imaplib.IMAP4_SSL(c["imap_host"], c["imap_port"],
-                              ssl_context=ssl.create_default_context())
+                              ssl_context=tlstrust.context())
         m.login(c["address"], c["password"])
         return m
     except imaplib.IMAP4.error as e:
         raise MailError(f"Mail server rejected the login: {e}. "
                         "If this is Gmail, iCloud or Outlook you need an app password, "
                         "not your normal password.") from None
+    except ssl.SSLError as e:
+        raise MailError(f"TLS failed talking to {c['imap_host']} — "
+                        f"{tlstrust.friendly(e)}") from None
+    except tlstrust.NoTrustStore as e:
+        raise MailError(str(e)) from None
     except OSError as e:
-        raise MailError(f"Could not reach {c['imap_host']}:{c['imap_port']} — {e}") from None
+        raise MailError(f"Could not reach {c['imap_host']}:{c['imap_port']} — "
+                        f"{tlstrust.friendly(e)}") from None
 
 
 def _body_text(msg: email.message.Message) -> tuple[str, list[str]]:
@@ -247,7 +253,10 @@ def t_email_send(agent, args, ctx):
         msg["References"] = str(args["in_reply_to"])
     msg.set_content(body)
 
-    ctxssl = ssl.create_default_context()
+    try:
+        ctxssl = tlstrust.context()
+    except tlstrust.NoTrustStore as e:
+        raise MailError(str(e)) from None
     try:
         if c["smtp_port"] == 465:
             with smtplib.SMTP_SSL(c["smtp_host"], c["smtp_port"], context=ctxssl, timeout=45) as s:
@@ -260,8 +269,12 @@ def t_email_send(agent, args, ctx):
                 s.send_message(msg)
     except smtplib.SMTPAuthenticationError:
         raise MailError("SMTP rejected the login. Check the app password in Settings.") from None
+    except ssl.SSLError as e:
+        raise MailError(f"TLS failed talking to {c['smtp_host']} — "
+                        f"{tlstrust.friendly(e)}") from None
     except OSError as e:
-        raise MailError(f"Could not reach {c['smtp_host']}:{c['smtp_port']} — {e}") from None
+        raise MailError(f"Could not reach {c['smtp_host']}:{c['smtp_port']} — "
+                        f"{tlstrust.friendly(e)}") from None
 
     security.audit(agent["name"], "email.sent",
                    {"to": to, "subject": subject, "bytes": len(body),

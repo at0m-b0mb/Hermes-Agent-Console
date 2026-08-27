@@ -1,0 +1,105 @@
+name: Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "assets/screenshots/**"
+      - "assets/logo.svg"
+      - "assets/mark.svg"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+# One deploy at a time, and never cancel one that is mid-flight — a half-applied
+# deploy would leave the site in a state nobody chose.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The site shows the same screenshots the README does. Copying them at
+      # build time keeps one copy in the repository rather than two that drift.
+      - name: Take the images from assets/
+        run: |
+          mkdir -p docs/shots
+          cp assets/screenshots/*.png docs/shots/
+          cp assets/logo.svg assets/mark.svg docs/
+
+      - name: Check every local reference resolves
+        run: |
+          python3 - <<'PY'
+          import pathlib, re, sys
+          page = pathlib.Path("docs/index.html")
+          html = page.read_text()
+          missing = [
+              ref for ref in re.findall(r'(?:src|href)="((?!https?:|#|mailto:)[^"]+)"', html)
+              if not (page.parent / ref).exists()
+          ]
+          if missing:
+              print("Broken local references:", *missing, sep="\n  ")
+              sys.exit(1)
+          print("All local references resolve.")
+          PY
+
+      - name: Check the HTML is balanced
+        run: |
+          python3 - <<'PY'
+          import pathlib, sys
+          from html.parser import HTMLParser
+
+          VOID = {"img", "br", "meta", "link", "input", "hr", "source", "wbr"}
+
+          class Check(HTMLParser):
+              def __init__(self):
+                  super().__init__()
+                  self.stack, self.errors = [], []
+
+              def handle_starttag(self, tag, attrs):
+                  if tag not in VOID:
+                      self.stack.append((tag, self.getpos()[0]))
+
+              def handle_endtag(self, tag):
+                  if not self.stack:
+                      self.errors.append(f"stray </{tag}> on line {self.getpos()[0]}")
+                      return
+                  open_tag, line = self.stack.pop()
+                  if open_tag != tag:
+                      self.errors.append(
+                          f"</{tag}> on line {self.getpos()[0]} closes <{open_tag}> from line {line}")
+
+          check = Check()
+          check.feed(pathlib.Path("docs/index.html").read_text())
+          if check.stack:
+              check.errors.append("never closed: " + ", ".join(
+                  f"<{t}> line {l}" for t, l in check.stack))
+          if check.errors:
+              print("Malformed HTML:", *check.errors, sep="\n  ")
+              sys.exit(1)
+          print("HTML is balanced.")
+          PY
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4

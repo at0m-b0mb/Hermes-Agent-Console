@@ -3,6 +3,49 @@
 All notable changes to Hermes are recorded here.
 This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] — 2026-08-27
+
+### Nothing that needed TLS worked, and it looked like four separate bugs
+
+An agent fetching a web page, the email connector, and every cloud AI backend all
+failed with the same unhelpful line:
+
+```
+[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate
+```
+
+One cause. On a macOS python.org build, OpenSSL is pointed at a `cert.pem` inside the
+framework that only exists once somebody runs the `Install Certificates.command` shipped
+beside the interpreter — and nobody runs it. The default SSL context therefore loads
+**zero** roots, so every TLS connection fails, everywhere, at once.
+
+The machine was not short of trust material: it had the system keychain and two OpenSSL
+bundles. The interpreter simply was not pointed at any of them.
+
+- **New `hermes/tlstrust.py`** finds a set of roots that actually loads — the interpreter's
+  own store, `SSL_CERT_FILE`, the common OpenSSL bundle locations, the bundle the Python
+  installer shipped but never wired up, and finally the macOS system keychain, cached after
+  the first look. Every TLS caller now shares it: `http_fetch`, IMAP, SMTP and `providers`.
+- **Verification is never turned off.** The tempting one-line "fix" for this error converts
+  a loud failure into a silent one, in the component that reads pages strangers wrote.
+- **The error explains itself now.** A verification failure prints what it actually is and
+  the exact command for this platform, instead of reading like the site is down or the API
+  key is wrong.
+- **`hermes doctor` has a Certificates line** reporting how many roots were found and where
+  from — and the remedy in full when there are none.
+- Verified against Gmail, Outlook and iCloud IMAP, Gmail and Outlook SMTP (both `SMTP_SSL`
+  and `STARTTLS`), a cloud AI endpoint, and ordinary web fetches.
+
+### Project site
+
+- **A GitHub Pages site** at [at0m-b0mb.github.io/Hermes-Agent-Console](https://at0m-b0mb.github.io/Hermes-Agent-Console),
+  deployed automatically whenever the site or its screenshots change. Same design tokens as
+  the console, no fonts, no scripts, no dependencies — the same promise the software makes.
+  The workflow checks every local reference resolves and that the HTML is balanced before it
+  will publish.
+
+---
+
 ## [1.5.0] — 2026-08-27
 
 Hardening for anything reachable from a network, plus the UI fixes that came out

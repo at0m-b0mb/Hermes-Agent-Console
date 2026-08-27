@@ -15,7 +15,7 @@ import time
 import urllib.error
 import urllib.request
 
-from . import db
+from . import db, tlstrust
 
 TIMEOUT = 300
 
@@ -98,23 +98,34 @@ PROVIDERS = {
 }
 
 
+def _tls():
+    """The verifying context, or None for plain http (a local Ollama)."""
+    try:
+        return tlstrust.context()
+    except tlstrust.NoTrustStore:
+        return None     # let the connection fail with the real error below
+
+
 def _post(url: str, payload: dict, headers: dict) -> dict:
     body = json.dumps(payload).encode()
     req = urllib.request.Request(url, data=body, method="POST",
                                  headers={"Content-Type": "application/json", **headers})
     try:
-        with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+        with urllib.request.urlopen(req, timeout=TIMEOUT, context=_tls()) as r:
             return json.loads(r.read().decode())
     except urllib.error.HTTPError as e:
         detail = e.read().decode()[:600]
         raise ProviderError(f"HTTP {e.code} from {url.split('?')[0]} — {detail}") from None
     except urllib.error.URLError as e:
-        raise ProviderError(f"Cannot reach {url.split('?')[0]} — {e.reason}") from None
+        # A trust failure here reads as "cannot reach the API", which sends
+        # people looking at their key and their network. Say what it is.
+        raise ProviderError(
+            f"Cannot reach {url.split('?')[0]} — {tlstrust.friendly(e.reason)}") from None
 
 
 def _get(url: str, headers: dict, timeout: int = 15) -> dict:
     req = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(req, timeout=timeout) as r:
+    with urllib.request.urlopen(req, timeout=timeout, context=_tls()) as r:
         return json.loads(r.read().decode())
 
 

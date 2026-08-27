@@ -12,3 +12,8 @@ dist/
 secret.key
 session.token
 .hermes/
+
+# Copied from assets/ by the Pages workflow; assets/ is the source of truth.
+docs/shots/
+docs/logo.svg
+docs/mark.svg
