@@ -7,9 +7,12 @@ allowed, writes and shell ask first, and nothing is silently destructive.
 """
 from __future__ import annotations
 
+import ast
+import datetime
 import fnmatch
 import json
 import os
+import shutil
 import shlex
 import subprocess
 import urllib.error
@@ -219,6 +222,103 @@ def t_search_files(agent, args, ctx):
     return _footer(head + "\n".join(hits))
 
 
+def t_append_file(agent, args, ctx):
+    """Add to the end of a file.
+
+    Without this, an agent building something up across several steps has only
+    write_file, which replaces the whole file — so it either loses the earlier
+    work or has to read the file back and re-send all of it every time.
+    """
+    p = _safe_path(agent, args["path"])
+    p.parent.mkdir(parents=True, exist_ok=True)
+    text = str(args.get("content", ""))
+    existed = p.exists()
+    before = p.stat().st_size if existed else 0
+    with p.open("a", encoding="utf-8") as fh:
+        if existed and before and not text.startswith("\n"):
+            prev = p.read_text(errors="replace")
+            if not prev.endswith("\n"):
+                fh.write("\n")
+        fh.write(text)
+    return (f"Appended {len(text)} bytes to {p} "
+            f"({'now ' + str(p.stat().st_size) + ' bytes' if existed else 'created it'})")
+
+
+def t_move_file(agent, args, ctx):
+    """Move or rename, inside the scope at both ends."""
+    src = _safe_path(agent, args["path"])
+    dst = _safe_path(agent, args["to"])
+    if not src.exists():
+        raise ToolError(f"Nothing at {src}")
+    if dst.exists() and not args.get("overwrite"):
+        raise ToolError(f"{dst} already exists. Pass overwrite: true if you mean to replace it.")
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(src), str(dst))
+    return f"Moved {src} -> {dst}"
+
+
+def t_now(agent, args, ctx):
+    """What the date and time actually are.
+
+    A model's idea of today comes from its training data and is confidently
+    wrong. Anything dated — a daily summary, "files from this week", an agenda —
+    needs a real clock, and this is the only way an agent gets one.
+    """
+    now = datetime.datetime.now().astimezone()
+    return (f"{now.strftime('%A %d %B %Y, %H:%M:%S %Z')}\n"
+            f"ISO: {now.isoformat(timespec='seconds')}\n"
+            f"date: {now.date()}  time: {now.strftime('%H:%M')}  "
+            f"weekday: {now.strftime('%A')}  week: {now.isocalendar()[1]}")
+
+
+_CALC_OK = set("0123456789.+-*/%() eE_")
+
+
+def t_calc(agent, args, ctx):
+    """Arithmetic that is actually correct.
+
+    Language models do arithmetic by pattern and get it wrong on anything with
+    more than a couple of digits — which matters the moment an agent is adding
+    up invoices. Evaluated as a literal expression tree, so nothing here can
+    call a function or reach a name.
+    """
+    expr = str(args["expression"]).strip().replace("^", "**").replace(",", "")
+    if not expr:
+        raise ToolError("Nothing to calculate.")
+    if len(expr) > 500:
+        raise ToolError("Expression too long.")
+    bad = set(expr) - _CALC_OK
+    if bad:
+        raise ToolError(f"Only arithmetic is allowed here. Not permitted: {''.join(sorted(bad))}")
+    try:
+        tree = ast.parse(expr, mode="eval")
+    except SyntaxError as e:
+        raise ToolError(f"That is not a valid expression: {e.msg}") from None
+
+    allowed_nodes = (ast.Expression, ast.BinOp, ast.UnaryOp, ast.Constant,
+                     ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Mod, ast.Pow,
+                     ast.USub, ast.UAdd, ast.FloorDiv)
+    for node in ast.walk(tree):
+        if not isinstance(node, allowed_nodes):
+            raise ToolError(f"{type(node).__name__} is not allowed — arithmetic only.")
+        if isinstance(node, ast.Constant) and not isinstance(node.value, (int, float)):
+            raise ToolError("Only numbers, please.")
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Pow):
+            # 9**9**9 would hang the worker for a very long time.
+            r = node.right
+            if not (isinstance(r, ast.Constant) and isinstance(r.value, (int, float)) and abs(r.value) <= 64):
+                raise ToolError("Exponents are capped at 64.")
+    try:
+        value = eval(compile(tree, "<calc>", "eval"), {"__builtins__": {}}, {})
+    except ZeroDivisionError:
+        raise ToolError("Division by zero.") from None
+    except Exception as e:
+        raise ToolError(f"Could not evaluate that: {e}") from None
+    if isinstance(value, float) and value == int(value) and abs(value) < 1e15:
+        return f"{expr} = {int(value)}"
+    return f"{expr} = {value:,.10g}" if isinstance(value, float) else f"{expr} = {value:,}"
+
+
 def t_run_shell(agent, args, ctx):
     cmd = args["command"]
     security.guard_command(cmd)
@@ -356,6 +456,20 @@ SPECS = [
     {"name": "write_file", "fn": t_write_file, "required": ["path", "content"], "group": "Filesystem", "danger": "high",
      "desc": "Create or overwrite a file. Overwrites without warning.",
      "params": {"path": "path to write", "content": "full file contents"}},
+    {"name": "append_file", "fn": t_append_file, "required": ["path", "content"], "group": "Filesystem", "danger": "high",
+     "desc": "Add to the end of a file without replacing what is already there.",
+     "params": {"path": "path to append to", "content": "text to add"}},
+    {"name": "move_file", "fn": t_move_file, "required": ["path", "to"], "group": "Filesystem", "danger": "high",
+     "desc": "Move or rename a file. Both ends must be inside your scope.",
+     "params": {"path": "what to move", "to": "where it goes",
+                "overwrite": "true to replace an existing file"}},
+    {"name": "now", "fn": t_now, "required": [], "group": "Utility", "danger": "low",
+     "desc": "The real current date, time and weekday. Use this for anything dated — "
+             "never guess today's date.", "params": {}},
+    {"name": "calc", "fn": t_calc, "required": ["expression"], "group": "Utility", "danger": "low",
+     "desc": "Work out an arithmetic expression exactly. Use this instead of doing sums "
+             "in your head.",
+     "params": {"expression": "e.g. (1249.50 + 380) * 0.2"}},
     {"name": "run_shell", "fn": t_run_shell, "required": ["command"], "group": "System", "danger": "critical",
      "desc": "Run a shell command in your working directory.",
      "params": {"command": "the shell command"}},
@@ -403,6 +517,28 @@ def default_grants() -> dict:
     for name in ("email_send",):
         g[name] = DENY
     return g
+
+
+def backfill_grants() -> int:
+    """Give existing agents the tools that did not exist when they were made.
+
+    A grant dict is a closed list — anything missing reads as deny — so an agent
+    created before a tool shipped can never use it, and nothing in the console
+    hints at why. Missing entries are filled with that tool's *default*, which
+    is `ask` for anything that writes and `deny` for outbound mail, so this can
+    widen what an agent asks about but never what it may do unsupervised.
+    """
+    defaults = default_grants()
+    changed = 0
+    for a in db.q("SELECT id, grants FROM agents"):
+        grants = db.jload(a["grants"], {})
+        missing = {k: v for k, v in defaults.items() if k not in grants}
+        if not missing:
+            continue
+        grants.update(missing)
+        db.ex("UPDATE agents SET grants=? WHERE id=?", (json.dumps(grants), a["id"]))
+        changed += 1
+    return changed
 
 
 def grant_of(agent: dict, tool: str) -> str:

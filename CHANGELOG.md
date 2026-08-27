@@ -3,6 +3,59 @@
 All notable changes to Hermes are recorded here.
 This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] — 2026-08-27
+
+### Know which model can actually do the job
+
+- **`hermes bench`** runs two fixed scenarios against every model your backends offer and
+  grades **what ended up on disk**, not what the model said it did. *Basics* asks whether it
+  can call a tool at all and put the result where it was told. *Assistant* is the real shape
+  of the work: read several files, apply a rule, use the real date instead of inventing one,
+  and produce an artefact in an exact format without disturbing the sources.
+- Verdicts run excellent / good / usable / weak / unusable, with the specific checks each
+  model missed. Being good at conversation and being able to drive a tool loop are different
+  skills, and the gap is enormous at small sizes.
+- The first cut of this graded every model "excellent", which meant it was measuring nothing.
+  The assistant scenario exists because a benchmark that cannot separate your models is not
+  worth running.
+- It cleans up completely — no throwaway agents, tasks or runs left in your history.
+
+### Tools daily assistant work actually needs
+
+- **`append_file`** — add to a file instead of replacing it. With only `write_file`, an agent
+  building something up across several steps either loses the earlier work or has to read the
+  whole file back and resend it every time.
+- **`move_file`** — move and rename, scope-checked at both ends, refusing to clobber unless
+  told to.
+- **`now`** — the real date, time and weekday. A model's idea of today comes from its
+  training data and is confidently wrong, so anything dated needs a clock.
+- **`calc`** — exact arithmetic, which matters the moment an agent is adding up invoices.
+  Parsed to a literal expression tree and refused unless it is pure arithmetic, so nothing
+  here can reach a name or call a function.
+
+### Agents made before a tool existed can now use it
+
+- A grant dict is a closed list, so an agent created before a tool shipped could never call
+  it and nothing in the console hinted why. Missing entries are filled with that tool's
+  **default** on startup — `ask` for anything that writes, `deny` for outbound mail — so this
+  widens what an agent asks about, never what it may do unsupervised.
+
+### See what your agents produced
+
+- **A Files view** over the workspace, with breadcrumbs, a preview drawer and a download.
+  Agents write real files and the only way to see them used to be a terminal.
+- It enforces the same floor as the agents: protected paths are marked as such in the
+  listing and refuse to open, and nothing outside the workspace is reachable.
+
+### Fixed
+
+- **The benchmark could hang for fifteen minutes per model.** Its throwaway agent was
+  `supervised`, so the moment a model reached for a tool left on "ask", the run parked on an
+  approval nobody was there to give. The bench agent is now explicitly allowed exactly the
+  tools its scenario needs and denied everything else, so it can never wait on a human.
+
+---
+
 ## [1.3.0] — 2026-08-26
 
 Features aimed at the two things that were actually painful in use: not knowing what a
@@ -228,6 +281,7 @@ the fix.
   requires a real file on disk before taking that branch. A CI job runs the installer
   through a pipe on every push.
 
+[1.4.0]: https://github.com/at0m-b0mb/Hermes-Agent-Console/releases/tag/v1.4.0
 [1.3.0]: https://github.com/at0m-b0mb/Hermes-Agent-Console/releases/tag/v1.3.0
 [1.2.0]: https://github.com/at0m-b0mb/Hermes-Agent-Console/releases/tag/v1.2.0
 [1.1.0]: https://github.com/at0m-b0mb/Hermes-Agent-Console/releases/tag/v1.1.0

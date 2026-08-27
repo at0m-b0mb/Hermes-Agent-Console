@@ -181,6 +181,7 @@ const App = {
       ['work', '≡', 'Work', s.tasks.filter(t => t.status === 'queued' || t.status === 'running').length],
       ['inbox', '⏸', 'Inbox', s.approvals.length + s.escalations.length, true],
       ['performance', '★', 'Performance', 0],
+      ['files', '🗂', 'Files', 0],
       ['runs', '⟲', 'Runs', 0],
       ['security', '🛡', 'Security', 0],
       ['settings', '⚙', 'Settings', 0],
@@ -225,7 +226,7 @@ const App = {
     const V = {
       command: () => this.vCommand(), agents: () => this.vAgents(),
       work: () => this.vWork(), inbox: () => this.vInbox(),
-      performance: () => this.vPerformance(), runs: () => this.vRuns(),
+      files: () => this.vFiles(), performance: () => this.vPerformance(), runs: () => this.vRuns(),
       security: () => this.vSecurity(), settings: () => this.vSettings(),
     };
     const T = {
@@ -233,6 +234,7 @@ const App = {
       agents: ['Agents', 'your team and what each one may touch'],
       work: ['Work', 'the queue, in progress, and standing duties'],
       inbox: ['Inbox', 'agents waiting on a decision from you'],
+      files: ['Files', 'what your agents have actually produced'],
       performance: ['Performance', 'how well each agent is actually doing'],
       runs: ['Runs', 'complete history with full transcripts'],
       security: ['Security', 'audit trail, hard limits and spend caps'],
@@ -601,6 +603,75 @@ const App = {
   },
 
   /* =================================================== PERFORMANCE */
+  /* ========================================================= FILES
+     Agents write real files, and until now the only way to see them was to
+     open a terminal. This is a read-only window on the workspace. */
+  async vFiles(path = '') {
+    this.set('<div class="empty"><span class="spin"></span></div>');
+    let data;
+    try {
+      data = await this.api(`/api/workspace?path=${encodeURIComponent(path)}`);
+    } catch (e) { return this.set(`<div class="empty"><p>${esc(e.message)}</p></div>`); }
+    this.state.filePath = data.path || '';
+
+    const crumbs = ['', ...(data.path ? data.path.split('/') : [])];
+    const trail = crumbs.map((c, i) => {
+      const upto = crumbs.slice(1, i + 1).join('/');
+      return `<a href="#" onclick="App.vFiles('${esc(upto)}');return false">${i ? esc(c) : 'workspace'}</a>`;
+    }).join('<span class="muted"> / </span>');
+
+    this.set(`
+      <div class="filter"><span>🗂</span><div class="crumbs">${trail}</div>
+        <span class="count">${data.entries.length} item(s)</span></div>
+      ${data.entries.length ? `<div class="card">${data.entries.map(e => `
+        <div class="task" style="cursor:${e.protected ? 'not-allowed' : 'pointer'}"
+             ${e.protected ? '' : `onclick="App.openPath('${esc(e.path)}', ${e.dir})"`}>
+          <div class="task-b">
+            <div class="task-t">${e.dir ? '📁' : '📄'} ${esc(e.name)}
+              ${e.protected ? '<span class="pill p-gold">protected</span>' : ''}</div>
+            <div class="task-m">
+              ${e.dir ? '<span class="muted">folder</span>'
+                      : `<span class="muted">${e.size} bytes</span>`}
+              <span class="muted">${rel(e.modified)}</span>
+              ${e.protected ? '<span class="muted">agents cannot read this, and neither can this view</span>' : ''}
+            </div>
+          </div>
+        </div>`).join('')}</div>`
+      : `<div class="empty"><div class="big">🗂</div><p>Nothing here yet. Files your agents
+         create in their workspace show up in this view.</p></div>`}`);
+  },
+
+  openPath(path, isDir) {
+    if (isDir) return this.vFiles(path);
+    this.filePreview(path);
+  },
+
+  async filePreview(path) {
+    let f;
+    try {
+      f = await this.api(`/api/workspace/x/file?path=${encodeURIComponent(path)}`);
+    } catch (e) { return this.toast(e.message, 'err'); }
+    this.drawer(`📄 ${esc(path)}`, `
+      <div class="task-m" style="margin-bottom:12px">
+        <span class="muted">${f.size} bytes</span>
+        <span class="muted">${rel(f.modified)}</span>
+      </div>
+      <div class="tr-c" style="max-height:60vh;white-space:pre-wrap">${esc(f.text)}</div>`,
+      `<button class="btn" onclick="App.closeDrawer()">Close</button>
+       <button class="btn btn-primary" onclick="App.saveFile('${esc(path)}')">↓ Download</button>`);
+    this._file = f;
+  },
+
+  saveFile(path) {
+    const blob = new Blob([this._file.text], { type: 'text/plain' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = path.split('/').pop();
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    this.toast(`Saved ${a.download}`, 'ok');
+  },
+
   async vPerformance() {
     this.set('<div class="empty"><span class="spin"></span></div>');
     const { agents } = await this.api('/api/leaderboard');
@@ -1390,7 +1461,7 @@ const App = {
       // `g` then a letter — the two-key idiom people already know from
       // GitHub and Gmail. The chord lapses after a second.
       if (this.kb.chord && Date.now() - this.kb.chord < 1000) {
-        const dest = { c: 'command', a: 'agents', w: 'work', i: 'inbox',
+        const dest = { c: 'command', a: 'agents', w: 'work', i: 'inbox', f: 'files',
                        p: 'performance', r: 'runs', s: 'security', ',': 'settings' }[e.key];
         this.kb.chord = 0;
         if (dest) { e.preventDefault(); this.go(dest); }
@@ -1420,6 +1491,7 @@ const App = {
       ['work', '≡', 'Work', 'the queue, in progress, and standing duties'],
       ['inbox', '⏸', 'Inbox', 'agents waiting on a decision from you'],
       ['performance', '★', 'Performance', 'how well each agent is actually doing'],
+      ['files', '🗂', 'Files', 'what your agents have actually produced'],
       ['runs', '⟲', 'Runs', 'complete history with full transcripts'],
       ['security', '🛡', 'Security', 'audit trail, hard limits and spend caps'],
       ['settings', '⚙', 'Settings', 'AI backends, keys and safety ceilings'],
@@ -1589,6 +1661,7 @@ const App = {
               ${row('Work', ['g', 'w'])}
               ${row('Inbox', ['g', 'i'])}
               ${row('Performance', ['g', 'p'])}
+              ${row('Files', ['g', 'f'])}
               ${row('Runs', ['g', 'r'])}
               ${row('Security', ['g', 's'])}
               ${row('Settings', ['g', ','])}

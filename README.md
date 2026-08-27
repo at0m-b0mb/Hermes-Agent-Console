@@ -16,7 +16,7 @@ quality gate checks what it actually did before it is allowed to call anything f
 [![Python](https://img.shields.io/badge/Python-3.9%2B-5C6CF2?style=for-the-badge&labelColor=0B0E1D)](https://python.org)
 [![Dependencies](https://img.shields.io/badge/Dependencies-zero-4FD1A5?style=for-the-badge&labelColor=0B0E1D)](#why-zero-dependencies)
 [![Offline](https://img.shields.io/badge/Runs-fully%20offline-A87CF0?style=for-the-badge&labelColor=0B0E1D)](#pick-a-brain-ai-backends)
-[![Tests](https://img.shields.io/badge/Tests-46%20passing-4FD1A5?style=for-the-badge&labelColor=0B0E1D)](#verification)
+[![Tests](https://img.shields.io/badge/Tests-60%20passing-4FD1A5?style=for-the-badge&labelColor=0B0E1D)](#verification)
 
 <br>
 
@@ -132,6 +132,8 @@ implements it if you want to change how it works.
 | Find a task in a long board | The filter box above the board | [`web/app.js`](hermes/web/app.js) · `paintBoard` |
 | See the board from a terminal | `hermes tasks` | [`__main__.py`](hermes/__main__.py) · `cmd_tasks` |
 | Know how long a run has been going | The ◷ clock on the card, ticking live | [`web/app.js`](hermes/web/app.js) · `dur` |
+| See what my agents actually produced | **Files** | [`server.py`](hermes/server.py) · `/api/workspace` |
+| Find out which model can do the job | `hermes bench` | [`bench.py`](hermes/bench.py) |
 | Work without a browser | `hermes shell` | [`shell.py`](hermes/shell.py) |
 
 ### Controlling what agents can touch
@@ -232,6 +234,39 @@ Forge › summarise every markdown file in ./docs into one overview
 
 ---
 
+## Which model should you actually use?
+
+Being good at conversation and being able to drive a tool loop are different skills, and
+the gap is enormous at small sizes. A 7B model that writes a lovely paragraph may be unable
+to emit a tool call the parser can read — and you find that out after watching it burn
+eighteen steps on a real job.
+
+So ask it directly:
+
+```bash
+hermes bench
+```
+
+Two fixed scenarios per model, graded on **what ended up on disk**, not on what the model
+said it did:
+
+| Scenario | What it is really testing |
+|---|---|
+| **Basics** | Can it call a tool at all, and put the result where it was told to? |
+| **Assistant** | The real shape of the work: read several files, apply a rule, use the real date rather than inventing one, and produce an artefact in an exact format without disturbing the sources. |
+
+```
+  ● qwen2.5:latest        excellent  17/17    62.4s  Drives the tool loop cleanly.
+      ✓ basics     7/7   all checks
+      ✓ assistant 10/10  all checks
+```
+
+A model that cannot pass **basics** cannot do anything harder — do not assign it work.
+One that passes basics but stumbles on **assistant** is fine for narrow, single-step jobs
+and will waste steps on anything bigger.
+
+---
+
 ## Pick a brain (AI backends)
 
 Chosen **per agent**, so a cheap local model can do the routine work and a strong one the
@@ -290,8 +325,10 @@ agent is never even told it exists.
 
 | Group | Tools |
 |---|---|
-| **Filesystem** | `read_file` `list_dir` `search_files` `write_file` |
-| | `read_file` takes `from_line` / `max_lines` for a big file; `list_dir` takes `depth` to see a whole tree in one call; `search_files` takes a glob like `*.md` to search names |
+| **Filesystem** | `read_file` `list_dir` `search_files` `write_file` `append_file` `move_file` |
+| | `read_file` takes `from_line` / `max_lines` for a big file; `list_dir` takes `depth` to see a whole tree in one call; `search_files` takes a glob like `*.md` to search names; `append_file` adds to a file instead of replacing it |
+| **Utility** | `now` `calc` |
+| | `now` is the real clock — a model's idea of today comes from its training data and is confidently wrong. `calc` is exact arithmetic, which matters the moment an agent is adding up invoices. |
 | **System** | `run_shell` |
 | **Network** | `http_fetch` |
 | **Email** | `email_list` `email_read` `email_search` `email_draft` `email_send` |
@@ -565,6 +602,7 @@ hermes serve --host 0.0.0.0 --i-understand-the-risk
 | `hermes shell` | Interactive terminal console |
 | `hermes run <agent> "<task>"` | Assign one task and stream it |
 | `hermes run <agent> "<task>" --yes` | …approving tool calls as they come up |
+| `hermes bench` | Test which of your models can actually drive an agent |
 | `hermes tasks` | Show the board — queued, running, finished, and what is waiting on you |
 | `hermes agents` | List agents and their capabilities |
 | `hermes doctor` | Check backends, keys and configuration |
@@ -587,7 +625,7 @@ asks, every time.
 | <kbd>n</kbd> | Assign work |
 | <kbd>t</kbd> | Light / dark |
 | <kbd>?</kbd> | Every shortcut |
-| <kbd>g</kbd> then <kbd>c a w i p r s ,</kbd> | Jump to a view |
+| <kbd>g</kbd> then <kbd>c a w i f p r s ,</kbd> | Jump to a view |
 | <kbd>esc</kbd> | Close palette or drawer |
 
 ### Environment variables
@@ -615,6 +653,7 @@ hermes/
 ├── server.py            HTTP API, SSE stream, static console
 ├── shell.py             interactive terminal console
 ├── templates.py         the eight hireable agent templates
+├── bench.py             the model benchmark behind `hermes bench`
 ├── runtime/             ← OpenClaw, the agent engine
 │   ├── engine.py        the agent loop, tool-call parsing, and the quality gate
 │   ├── tools.py         every capability, and the sandbox around it
@@ -696,7 +735,7 @@ python3 tests/test_hermes.py
 ```
 
 ```
-Ran 46 tests in 1.1s
+Ran 60 tests in 1.1s
 
 OK
 ```
@@ -716,6 +755,9 @@ It runs against a throwaway `HERMES_HOME`, so it never touches a real installati
 | **Key vault** | encrypt/decrypt round-trips, and tampered ciphertext fails closed |
 | **Audit chain** | an edited row is detected and located; secrets never reach the log |
 | **Autonomy** | levels widen only *when* an agent asks, never *what* it may touch |
+| **Everyday tools** | `append_file` builds up rather than replacing; `move_file` refuses to clobber or leave scope; `now` reports the real date; `calc` is exact and evaluates arithmetic *and nothing else* |
+| **Grant backfill** | an older agent gains new tools at a safe default, keeps its existing choices, and is never silently granted outbound mail |
+| **The benchmark** | grades disk state rather than the model's claim, and its verdict tiers are ordered |
 | **Packaging** | nothing outside the standard library is imported |
 
 Several of these exist because the thing they check was once broken. Those cases are named

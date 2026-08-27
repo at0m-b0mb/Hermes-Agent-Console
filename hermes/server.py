@@ -68,6 +68,7 @@ STARTER_AGENTS = [
                       "behind every claim. You never guess when you can check.",
      "grants": {"read_file": "allow", "list_dir": "allow", "search_files": "allow",
                 "http_fetch": "allow", "remember": "allow", "recall": "allow",
+                "now": "allow", "calc": "allow", "append_file": "ask", "move_file": "deny",
                 "write_file": "ask", "run_shell": "deny", "delegate": "ask", "finish": "allow"}},
     {"name": "Forge", "role": "Code & automation", "emoji": "⚒️", "accent": "#F5B93B",
      "system_prompt": "You write working code, then you run it to prove it works. You read "
@@ -75,12 +76,14 @@ STARTER_AGENTS = [
                       "passes without executing it.",
      "grants": {"read_file": "allow", "list_dir": "allow", "search_files": "allow",
                 "write_file": "ask", "run_shell": "ask", "http_fetch": "ask",
+                "now": "allow", "calc": "allow", "append_file": "ask", "move_file": "ask",
                 "remember": "allow", "recall": "allow", "delegate": "ask", "finish": "allow"}},
     {"name": "Ledger", "role": "Files, notes & organisation", "emoji": "📒", "accent": "#4FD1A5",
      "system_prompt": "You keep things tidy and organised. You summarise clearly and always "
                       "confirm the exact path of any file you touch.",
      "grants": {"read_file": "allow", "list_dir": "allow", "search_files": "allow",
                 "write_file": "ask", "run_shell": "deny", "http_fetch": "deny",
+                "now": "allow", "calc": "allow", "append_file": "ask", "move_file": "ask",
                 "remember": "allow", "recall": "allow", "delegate": "ask", "finish": "allow"}},
 ]
 
@@ -274,6 +277,49 @@ def api(method: str, path: str, query: dict, body: dict) -> dict:
             db.ex("DELETE FROM tasks WHERE id=?", (rid,))
             return {"ok": True}
         return {"task": task}
+
+    # -- workspace ---------------------------------------------------------
+    # What the agents actually produced. Read-only, and it refuses to leave the
+    # workspace or to hand back anything the agents themselves cannot read.
+    if head == "workspace":
+        root = config.WORKSPACE.resolve()
+        root.mkdir(parents=True, exist_ok=True)
+        rel = (body.get("path") or query.get("path", [""])[0] or "").lstrip("/")
+        target = (root / rel).resolve() if rel else root
+        if target != root and root not in target.parents:
+            raise ApiError("Outside the workspace", 403)
+
+        if sub == "file" or target.is_file():
+            try:
+                security.guard_path(target)
+            except security.SecurityViolation as e:
+                raise ApiError(str(e), 403)
+            if not target.is_file():
+                raise ApiError("No such file", 404)
+            if target.stat().st_size > 400_000:
+                raise ApiError("That file is too large to preview here", 413)
+            return {"path": str(target.relative_to(root)), "size": target.stat().st_size,
+                    "modified": target.stat().st_mtime,
+                    "text": security.redact(target.read_text(errors="replace"))}
+
+        if not target.is_dir():
+            raise ApiError("No such folder", 404)
+        entries = []
+        for item in sorted(target.iterdir(), key=lambda i: (i.is_file(), i.name.lower()))[:500]:
+            try:
+                st = item.stat()
+            except OSError:
+                continue
+            protected = False
+            try:
+                security.guard_path(item)
+            except security.SecurityViolation:
+                protected = True
+            entries.append({"name": item.name, "dir": item.is_dir(),
+                            "size": 0 if item.is_dir() else st.st_size,
+                            "modified": st.st_mtime, "protected": protected,
+                            "path": str(item.relative_to(root))})
+        return {"root": str(root), "path": rel, "entries": entries}
 
     # -- runs --------------------------------------------------------------
     if head == "runs":

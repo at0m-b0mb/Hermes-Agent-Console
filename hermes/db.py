@@ -177,6 +177,10 @@ def init() -> None:
     # first audited action and fail on a missing table.
     from . import security
     security.init_audit()
+    # Tools shipped after an agent was created would otherwise be invisible to
+    # it forever, since a grant dict is a closed list.
+    from .runtime import tools
+    tools.backfill_grants()
 
 
 def nid() -> str:

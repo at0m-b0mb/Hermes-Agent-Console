@@ -639,3 +639,9 @@ kbd {
 }
 .filter input::placeholder { color: var(--muted); }
 .filter .count { margin-left: auto; }
+
+/* Breadcrumb trail in the Files view. */
+.crumbs { flex: 1; min-width: 0; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.crumbs a { color: var(--text-2); text-decoration: none; }
+.crumbs a:hover { color: var(--gold-ink); text-decoration: underline; }
+.crumbs a:last-child { color: var(--text); font-weight: 550; }

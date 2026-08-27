@@ -218,6 +218,61 @@ def _approvals_on_the_terminal(pending, done, args) -> None:
         print(f"  {GREEN if ok else RED}{'approved' if ok else 'denied'}{OFF}")
 
 
+def cmd_bench(args) -> int:
+    """Which of your models can actually be an agent."""
+    db.init()
+    from . import bench
+
+    print(BANNER)
+    picks = bench.candidates(getattr(args, "provider", "") or "", getattr(args, "model", None))
+    if not picks:
+        print(f"  {RED}No reachable models.{OFF} {DIM}Run `hermes doctor` to see why.{OFF}\n")
+        return 1
+
+    which = [args.scenario] if getattr(args, "scenario", "") else list(bench.SCENARIOS)
+    print(f"  {BOLD}Benchmarking {len(picks)} model(s) over {len(which)} scenario(s){OFF}")
+    for s in which:
+        print(f"  {DIM}· {bench.SCENARIOS[s]['label']}{OFF}")
+    print(f"  {DIM}Graded on what ended up on disk, not on what the model said it did.{OFF}\n")
+
+    C = {"excellent": GREEN, "good": GREEN, "usable": GOLD, "weak": GOLD, "unusable": RED}
+
+    def started(provider, model, scenario):
+        print(f"  {INDIGO}▸{OFF} {BOLD}{model}{OFF} {DIM}· {scenario}{OFF}", flush=True)
+
+    def finished(r):
+        for name, ok in r["results"].items():
+            print(f"      {GREEN + '✓' + OFF if ok else RED + '✗' + OFF} {DIM}{name}{OFF}")
+        print(f"      {DIM}{r['passed']}/{r['total']} · {r['steps']} steps · {r['seconds']}s{OFF}")
+        if r["error"]:
+            print(f"      {RED}{r['error'][:140]}{OFF}")
+        print()
+
+    rows = bench.run(getattr(args, "provider", "") or "", getattr(args, "model", None),
+                     which, on_start=started, on_result=finished)
+
+    print(f"  {BOLD}Verdict{OFF}\n")
+    for r in rows:
+        c = C[r["tier"]]
+        print(f"   {c}●{OFF} {BOLD}{r['model']:<22}{OFF}{c}{r['tier']:<11}{OFF}"
+              f"{DIM}{r['passed']}/{r['total']}  {r['seconds']:>6.1f}s  {r['advice']}{OFF}")
+        for sub in r["runs"]:
+            missed = [k for k, v in sub["results"].items() if not v]
+            mark = GREEN + "✓" + OFF if not missed else GOLD + "!" + OFF
+            detail = "all checks" if not missed else "missed: " + ", ".join(missed[:3])
+            print(f"       {mark} {DIM}{sub['scenario']:<10} {sub['passed']}/{sub['total']}  "
+                  f"{detail}{OFF}")
+    best = rows[0]
+    if best["passed"] >= best["total"] * 0.85:
+        print(f"\n  {DIM}Best of these: {OFF}{BOLD}{best['model']}{OFF}"
+              f"{DIM} — set it per agent, or as the default in Settings.{OFF}")
+    else:
+        print(f"\n  {GOLD}None of these drove the loop cleanly.{OFF} "
+              f"{DIM}Try a larger local model, or add a free key: hermes key groq{OFF}")
+    print()
+    return 0
+
+
 def cmd_tasks(args) -> int:
     """The board, for people who are already in a terminal."""
     db.init()
@@ -359,6 +414,13 @@ def main(argv=None) -> int:
 
     a = sub.add_parser("agents", help="list agents and their capabilities")
     a.set_defaults(fn=cmd_agents)
+
+    bn = sub.add_parser("bench", help="test which of your models can actually drive an agent")
+    bn.add_argument("--model", action="append", help="test just this model (repeatable)")
+    bn.add_argument("--provider", default="", help="test only this backend's models")
+    bn.add_argument("--scenario", default="", choices=["", "basics", "assistant"],
+                    help="run just one scenario instead of both")
+    bn.set_defaults(fn=cmd_bench)
 
     tk = sub.add_parser("tasks", help="show the board: queued, running and finished work")
     tk.add_argument("--limit", type=int, default=40)

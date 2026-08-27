@@ -302,6 +302,123 @@ class ToolArguments(unittest.TestCase):
             tools.execute(quiet, "run_shell", {"command": "ls"}, {})
 
 
+# --------------------------------------------------------- everyday tools
+
+class EverydayTools(unittest.TestCase):
+    """The tools that daily assistant work actually leans on."""
+
+    def setUp(self):
+        self.doc = WORK / "log.md"
+        if self.doc.exists():
+            self.doc.unlink()
+
+    def test_append_builds_up_instead_of_replacing(self):
+        """With only write_file, an agent working across several steps either
+        loses the earlier lines or has to resend the whole file each time."""
+        for line in ("- one", "- two", "- three"):
+            tools.t_append_file(agent(), {"path": str(self.doc), "content": line}, {})
+        body = self.doc.read_text()
+        for line in ("- one", "- two", "- three"):
+            self.assertIn(line, body)
+        self.assertEqual(len(body.strip().splitlines()), 3)
+
+    def test_append_respects_the_sandbox(self):
+        with self.assertRaises((tools.Denied, security.SecurityViolation)):
+            tools.t_append_file(agent(), {"path": "/etc/hosts", "content": "x"}, {})
+
+    def test_move_refuses_to_clobber_without_being_told(self):
+        a, b = WORK / "a.txt", WORK / "b.txt"
+        a.write_text("A"); b.write_text("B")
+        with self.assertRaises(tools.ToolError):
+            tools.t_move_file(agent(), {"path": str(a), "to": str(b)}, {})
+        tools.t_move_file(agent(), {"path": str(a), "to": str(b), "overwrite": True}, {})
+        self.assertEqual(b.read_text(), "A")
+
+    def test_move_cannot_leave_the_scope(self):
+        src = WORK / "leaky.txt"
+        src.write_text("x")
+        with self.assertRaises((tools.Denied, security.SecurityViolation)):
+            tools.t_move_file(agent(), {"path": str(src), "to": "/tmp/escaped.txt"}, {})
+
+    def test_now_reports_the_real_date(self):
+        import datetime
+        out = tools.t_now(agent(), {}, {})
+        self.assertIn(datetime.date.today().isoformat(), out)
+
+    def test_calc_is_exact_where_a_model_would_not_be(self):
+        self.assertIn("1,729.74", tools.t_calc(agent(), {"expression": "1249.50 + 380.25 + 99.99"}, {}))
+        self.assertIn("16,031", tools.t_calc(agent(), {"expression": "17 * 23 * 41"}, {}))
+
+    def test_calc_evaluates_arithmetic_and_nothing_else(self):
+        """It reaches eval, so what it will accept is a security boundary."""
+        for hostile in ("__import__('os').system('id')", "open('/etc/passwd').read()",
+                        "().__class__.__bases__", "exec('x=1')", "1 if 1 else 2"):
+            with self.assertRaises(tools.ToolError, msg=hostile):
+                tools.t_calc(agent(), {"expression": hostile}, {})
+
+    def test_calc_refuses_to_hang_on_a_huge_power(self):
+        with self.assertRaises(tools.ToolError):
+            tools.t_calc(agent(), {"expression": "9**9**9"}, {})
+
+    def test_divide_by_zero_is_a_message_not_a_crash(self):
+        with self.assertRaises(tools.ToolError):
+            tools.t_calc(agent(), {"expression": "1/0"}, {})
+
+
+class Bench(unittest.TestCase):
+    """The model benchmark grades disk state, and must leave none of its own."""
+
+    def test_scenarios_are_well_formed(self):
+        from hermes import bench
+        for name, spec in bench.SCENARIOS.items():
+            self.assertIn(name, bench.GRADERS)
+            self.assertTrue(spec["brief"].strip())
+            self.assertTrue(spec["label"].strip())
+
+    def test_grading_reads_the_disk_not_the_claim(self):
+        from hermes import bench
+        ws = WORK / "benchcheck"
+        ws.mkdir(parents=True, exist_ok=True)
+        empty = bench._grade_basics(ws, [], {"status": "done"})
+        self.assertFalse(empty["wrote the file"])
+        self.assertFalse(empty["total is right"])
+        (ws / "total.txt").write_text(bench.EXPECTED_TOTAL)
+        good = bench._grade_basics(ws, ["calc", "write_file", "read_file"], {"status": "done"})
+        self.assertTrue(all(good.values()), good)
+
+    def test_a_dirty_file_is_not_a_clean_one(self):
+        from hermes import bench
+        ws = WORK / "benchcheck2"
+        ws.mkdir(parents=True, exist_ok=True)
+        (ws / "total.txt").write_text("The total is $1729.74 pounds")
+        r = bench._grade_basics(ws, ["calc", "write_file", "read_file"], {"status": "done"})
+        self.assertTrue(r["total is right"], "the number is in there")
+        self.assertFalse(r["file is clean"], "but the file was to hold only the number")
+
+    def test_verdict_tiers_are_ordered(self):
+        from hermes import bench
+        tiers = [bench._verdict_from(n, 10)[0] for n in (0, 3, 6, 9, 10)]
+        self.assertEqual(tiers, ["unusable", "weak", "usable", "good", "excellent"])
+
+
+class GrantBackfill(unittest.TestCase):
+
+    def test_an_older_agent_gains_new_tools_at_a_safe_default(self):
+        """A grant dict is a closed list, so an agent made before a tool shipped
+        could never use it and nothing explained why."""
+        aid = db.nid()
+        db.ex("""INSERT INTO agents(id,name,provider,model,grants,scopes,created_at,updated_at)
+                 VALUES(?,?,?,?,?,?,?,?)""",
+              (aid, "Antique", "ollama", "x", '{"read_file":"allow"}', "{}", db.now(), db.now()))
+        tools.backfill_grants()
+        g = db.jload(db.q1("SELECT grants FROM agents WHERE id=?", (aid,))["grants"], {})
+        self.assertEqual(g["read_file"], tools.ALLOW, "existing choices are left alone")
+        self.assertEqual(g["calc"], tools.ALLOW, "a harmless new tool is granted")
+        self.assertEqual(g["write_file"], tools.ASK, "anything that writes only ever asks")
+        self.assertEqual(g["email_send"], tools.DENY, "outbound mail is never granted silently")
+        db.ex("DELETE FROM agents WHERE id=?", (aid,))
+
+
 # ------------------------------------------------------------ untrusted text
 
 class UntrustedContent(unittest.TestCase):
