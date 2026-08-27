@@ -16,11 +16,17 @@ quality gate checks what it actually did before it is allowed to call anything f
 [![Python](https://img.shields.io/badge/Python-3.9%2B-5C6CF2?style=for-the-badge&labelColor=0B0E1D)](https://python.org)
 [![Dependencies](https://img.shields.io/badge/Dependencies-zero-4FD1A5?style=for-the-badge&labelColor=0B0E1D)](#why-zero-dependencies)
 [![Offline](https://img.shields.io/badge/Runs-fully%20offline-A87CF0?style=for-the-badge&labelColor=0B0E1D)](#pick-a-brain-ai-backends)
-[![Tests](https://img.shields.io/badge/Tests-60%20passing-4FD1A5?style=for-the-badge&labelColor=0B0E1D)](#verification)
+[![Tests](https://img.shields.io/badge/Tests-75%20passing-4FD1A5?style=for-the-badge&labelColor=0B0E1D)](#verification)
 
 <br>
 
 **[Install](#install)** · **[First 60 seconds](#your-first-60-seconds)** · **[How do I…?](#how-do-i)** · **[The guide](#the-guide)** · **[Security](#security)** · **[Code map](#code-map)**
+
+<br>
+
+<img src="assets/screenshots/command.png" alt="The Hermes command view: four agents, live activity, and two agents waiting on a decision" width="900">
+
+<sub>Command — everything your workforce is doing, and the two things waiting on you.</sub>
 
 </div>
 
@@ -179,6 +185,15 @@ implements it if you want to change how it works.
 
 **The console** — full graphical interface at `localhost:4317`.
 
+<img src="assets/screenshots/work.png" alt="The work board: queued, in progress, completed and needs-attention columns" width="900">
+
+<sub>The board. Running tasks carry a live clock, and anything blocked on your decision says so.</sub>
+
+<br>
+
+<details>
+<summary>The same thing as a sketch, for anyone reading this in a terminal</summary>
+
 ```
 ┌──────────────┬──────────────────────────────────────────────────────────────┐
 │   HERMES     │  Command      live view of your workforce   ⌘K  ☀  ?  + Work │
@@ -199,8 +214,16 @@ implements it if you want to change how it works.
 └──────────────┴───────────────────────────┴──────────────────────────────────┘
 ```
 
+</details>
+
+<br>
+
 Press <kbd>⌘K</kbd> anywhere for the command palette, <kbd>?</kbd> for every shortcut, and
 <kbd>t</kbd> to switch between light and dark.
+
+<img src="assets/screenshots/palette.png" alt="The command palette, listing actions, views and agents" width="900">
+
+<sub>⌘K reaches every view, every agent and every action. Results are ranked, so the thing you typed the name of comes first.</sub>
 
 **The shell** — same engine, no browser. Built for SSH sessions.
 
@@ -302,6 +325,12 @@ Three agents ship with Hermes so there is something to try immediately.
 | 🗺️ | **Atlas** | Research & synthesis | Reads and fetches freely, cannot run commands |
 | ⚒️ | **Forge** | Code & automation | Reads freely, asks before writing or running |
 | 📒 | **Ledger** | Files, notes & organisation | Reads and organises, no network access |
+
+<img src="assets/screenshots/agents.png" alt="The agents view: three agent cards showing model, autonomy and tool counts" width="900">
+
+<sub>Every agent shows its model, its posture, and how many tools it may touch without asking.</sub>
+
+<br>
 
 Create your own in **Agents → Hire an agent**, or `/new` in the shell. Eight templates are
 offered — personal assistant, inbox manager, files, research, code, monitoring, writing, or
@@ -411,6 +440,10 @@ Two different things run here, and it is worth keeping them apart:
   **Performance** shows blanks and says so.
 - **Your own rating** — 0–100 in the run drawer — always wins over the judge.
 
+<img src="assets/screenshots/run.png" alt="A run drawer showing the full transcript of tool calls and their output" width="900">
+
+<sub>Every run keeps the whole transcript — each tool call, its arguments, and what came back. Export it as Markdown from the same panel.</sub>
+
 **Performance** shows scorecards, success rates, cost and score trend per agent, so "which
 of my agents is actually any good" has an answer.
 
@@ -457,10 +490,28 @@ Hermes handles this in two layers, and the second is the one that counts:
 
 ### Everything else
 
-- **Auth** — every API call needs a session token. Failed attempts are rate-limited (8
-  tries, then a 5-minute lockout), and each failure is audited.
+- **Auth** — every API call needs a session token, sent as a header. Failed attempts are
+  rate-limited (8 tries, then a 5-minute lockout), and each failure is audited. The token is
+  checked *before* the lockout is consulted, so somebody spraying wrong tokens can never
+  lock you out of your own console.
+- **Connection ceilings** — 64 connections in total and 8 from any one client, with a
+  20-second timeout on a half-finished request. Without these, two hundred sockets that
+  never finish their request park two hundred threads, from a client that never
+  authenticated.
+- **Request ceilings** — bodies are capped at 2 MB and read with a timeout, so a body that
+  is announced and never sent cannot hold a worker.
+- **Security headers** — `nosniff`, `frame-ancestors 'none'`, `Referrer-Policy: no-referrer`,
+  a `Permissions-Policy` that turns off camera, microphone, geolocation, payment and USB, and
+  a CSP that locks every fetch to this origin. Nothing loads from anywhere else and nothing
+  can be exfiltrated to anywhere else.
+- **Errors say nothing useful to an attacker** — a 500 returns a reference, and the detail
+  goes to your terminal and the audit log. An exception string is a good way to hand
+  somebody your filesystem layout.
 - **Loopback by default** — binding beyond localhost is refused unless you explicitly
   acknowledge that TLS must terminate in front.
+- **The session token stays out of logs** — it is a header everywhere except the live event
+  stream, which cannot set one. Nowhere else accepts it in a query string, so it does not
+  end up in proxy logs, browser history or a `Referer`.
 - **Host header checked** — so a malicious page cannot reach the server by DNS rebinding.
 - **Encrypted key vault** — API keys and mail passwords are encrypted at rest under a
   `0600` machine secret. Never written to the repo, logs, or transcripts.
@@ -472,6 +523,10 @@ Hermes handles this in two layers, and the second is the one that counts:
 - **Tamper-evident audit log** — every tool call, approval, key change and run is recorded
   in a hash-linked chain. Editing or deleting any row breaks the chain, and the Security
   view says so.
+
+<img src="assets/screenshots/security.png" alt="The security view: audit chain status, hard limits and spend caps" width="900">
+
+<sub>The Security view re-walks the hash chain on every load and tells you if a row has been edited.</sub>
 
 ```bash
 hermes audit           # read it and verify the chain
@@ -540,6 +595,13 @@ hermes serve --no-browser
 ssh -N -L 4317:localhost:4317 you@server
 # then open http://localhost:4317
 ```
+
+> **Behind a proxy, tell Hermes which one.** Every request then arrives from the proxy's
+> address, so per-client limits become per-server limits and stop meaning anything. Set
+> `server.trusted_proxy` to the proxy's IP and Hermes will read `X-Forwarded-For` — but only
+> from that address, because otherwise any client could simply claim to be someone else.
+> Connection-rate limiting is still better done at the proxy, which sees the real clients
+> first.
 
 **Alternative — TLS reverse proxy.** Caddy handles certificates for you:
 
@@ -735,7 +797,7 @@ python3 tests/test_hermes.py
 ```
 
 ```
-Ran 60 tests in 1.1s
+Ran 75 tests in 1.1s
 
 OK
 ```
@@ -758,6 +820,10 @@ It runs against a throwaway `HERMES_HOME`, so it never touches a real installati
 | **Everyday tools** | `append_file` builds up rather than replacing; `move_file` refuses to clobber or leave scope; `now` reports the real date; `calc` is exact and evaluates arithmetic *and nothing else* |
 | **Grant backfill** | an older agent gains new tools at a safe default, keeps its existing choices, and is never silently granted outbound mail |
 | **The benchmark** | grades disk state rather than the model's claim, and its verdict tiers are ordered |
+| **Connection ceilings** | one client cannot take every slot; slots are returned exactly once |
+| **Lockout** | a valid token is checked before the throttle, so it cannot be used to lock you out |
+| **Forwarded-For** | only believed from an address you named as a proxy |
+| **Request ceilings** | a body cap and a socket timeout exist and are sane |
 | **Packaging** | nothing outside the standard library is imported |
 
 Several of these exist because the thing they check was once broken. Those cases are named

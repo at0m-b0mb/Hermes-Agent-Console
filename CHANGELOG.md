@@ -3,6 +3,72 @@
 All notable changes to Hermes are recorded here.
 This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] — 2026-08-27
+
+Hardening for anything reachable from a network, plus the UI fixes that came out
+of finally looking at the console at full size.
+
+### Denial of service — found by attacking a running instance
+
+- **A client that never authenticated could park every worker thread.** Two hundred
+  half-finished requests took the thread count from 3 to 203, and nothing timed them
+  out. There is now a **20-second socket timeout**, a **64-connection ceiling**, and —
+  the part that matters — a **per-client share of 8**, so one client saturating the
+  port cannot take the console away from everyone else.
+- **The brute-force lockout could be turned against the operator.** It keyed on client
+  IP, so somebody spraying wrong tokens locked out the real user; behind the reverse
+  proxy the README recommends, *everyone* shares one address, so this was worse than
+  it looks. The token is now checked **before** the lockout is consulted: a valid token
+  is never throttled, no matter how much noise anyone else is making.
+- **A body that was announced and never sent held a thread open.** Bodies are capped at
+  2 MB and read with a timeout.
+- **A malformed `Content-Length` killed the handler thread** with an unhandled
+  `ValueError` and printed a traceback full of absolute paths. It is a 400 now.
+
+### What the server tells the network
+
+- **Security headers on every response**: `nosniff`, `X-Frame-Options: DENY`,
+  `Referrer-Policy: no-referrer`, a `Permissions-Policy` that turns off camera,
+  microphone, geolocation, payment and USB, and a CSP that pins every fetch, script,
+  style and frame ancestor to this origin.
+- **The Python version is no longer advertised** in `Server:`.
+- **The session token is a header everywhere except the live event stream**, which
+  cannot set one. It used to be accepted in the query string on every endpoint, which
+  put it in proxy logs, browser history and `Referer`.
+- **A 500 returns a reference, not an exception string.** The detail goes to the
+  operator's terminal and the audit log.
+- **`X-Forwarded-For` is read only from an address you name** in `server.trusted_proxy`.
+  Believing it unconditionally would let any client claim to be anyone.
+- Static file serving now asks the path whether it is inside the web directory instead
+  of comparing string prefixes.
+
+### `hermes doctor` reports the security posture
+
+Vault and home directory permissions, the Host allowlist, whether a proxy is trusted,
+which agents have shell access or a wide filesystem scope, and whether the audit chain
+still verifies — with the fixed, non-configurable floor stated at the bottom.
+
+### The console
+
+- **Task cards were unreadable on the board.** The card was a two-column flex, so in a
+  265px column the buttons claimed their width first and left the title four characters
+  — titles wrapped one word per line and result text became an unreadable ribbon. The
+  actions now wrap underneath exactly when there is no room for them.
+- **Keyboard focus is visible.** There is a whole keyboard layer in this console and no
+  focus ring anywhere; `:focus-visible` rings now show for keyboard and assistive-tech
+  users without appearing for pointer users. Added a skip link past the sidebar and
+  proper labels on the icon-only buttons.
+- **`prefers-reduced-motion` is respected** — none of the motion carries information.
+- **`prefers-contrast: more`** strengthens borders and muted text.
+- Layouts hold together at narrower window widths instead of only at full screen.
+
+### Documentation
+
+Six real screenshots of the running console, and a README security section that
+describes the ceilings and headers as they actually are.
+
+---
+
 ## [1.4.0] — 2026-08-27
 
 ### Know which model can actually do the job

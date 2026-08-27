@@ -551,6 +551,147 @@ class Autonomy(unittest.TestCase):
 
 # -------------------------------------------------------------- sanity
 
+# ------------------------------------------------------- exposed to a network
+
+class ConnectionCeilings(unittest.TestCase):
+    """One client must not be able to take the console away from everyone else.
+
+    A global thread ceiling stops the box falling over but not the service being
+    denied — the first version of this refused the operator with 503 while an
+    unauthenticated flood held every slot.
+    """
+
+    def setUp(self):
+        from hermes import server
+        self.s = server
+        server._per_client.clear()
+        while server._slots._value < server.MAX_CONNECTIONS:
+            server._slots.release()
+
+    def tearDown(self):
+        self.setUp()
+
+    def test_one_client_is_capped(self):
+        got = sum(self.s._take_slot("10.0.0.5") for _ in range(40))
+        self.assertEqual(got, self.s.MAX_PER_CLIENT)
+
+    def test_other_clients_are_unaffected(self):
+        for _ in range(40):
+            self.s._take_slot("10.0.0.5")
+        self.assertTrue(self.s._take_slot("10.0.0.9"), "a second client must still get in")
+
+    def test_global_ceiling_holds(self):
+        served = sum(self.s._take_slot(f"10.0.1.{i}") for i in range(200))
+        self.assertEqual(served, self.s.MAX_CONNECTIONS)
+
+    def test_slots_are_returned_exactly(self):
+        for i in range(20):
+            self.s._take_slot(f"10.0.2.{i}")
+        for i in range(20):
+            self.s._free_slot(f"10.0.2.{i}")
+        self.assertEqual(self.s._slots._value, self.s.MAX_CONNECTIONS)
+        self.assertFalse(self.s._per_client)
+
+    def test_a_stray_free_cannot_inflate_the_pool(self):
+        self.s._free_slot("never-connected")
+        self.s._free_slot("never-connected")
+        self.assertEqual(self.s._slots._value, self.s.MAX_CONNECTIONS)
+
+
+class LockoutCannotBeWeaponised(unittest.TestCase):
+    """The brute-force lockout must never lock out the real operator."""
+
+    def setUp(self):
+        from hermes import server
+        self.s = server
+        server._auth_fails.clear()
+
+    def tearDown(self):
+        self.s._auth_fails.clear()
+
+    def test_failures_eventually_throttle(self):
+        for _ in range(self.s.MAX_FAILS):
+            self.s._record_fail("198.51.100.7")
+        self.assertGreater(self.s._throttled("198.51.100.7"), 0)
+
+    def test_one_attacker_does_not_throttle_another_client(self):
+        for _ in range(self.s.MAX_FAILS * 3):
+            self.s._record_fail("198.51.100.7")
+        self.assertEqual(self.s._throttled("203.0.113.4"), 0)
+
+    def test_the_table_cannot_grow_without_bound(self):
+        for i in range(5000):
+            self.s._record_fail(f"198.51.100.{i}")
+        self.assertLessEqual(len(self.s._auth_fails), 4200)
+
+    def test_a_valid_token_is_checked_before_the_throttle(self):
+        """The guard checks the token first and returns; the throttle is only
+        consulted on the failure path. Asserted on the source because the
+        ordering *is* the control."""
+        import inspect
+        src = inspect.getsource(self.s.Handler._guard)
+        tok_at = src.index("security.check_token")
+        thr_at = src.index("_throttled")
+        self.assertLess(tok_at, thr_at,
+                        "a valid token must be accepted before any lockout is consulted")
+
+
+class ForwardedFor(unittest.TestCase):
+    """X-Forwarded-For is a client-supplied header. It is only worth anything
+    when a proxy you trust is the one setting it."""
+
+    class _Handler:
+        """The two things client_ip() reads off a live request."""
+
+        def __init__(self, peer, xff=""):
+            self.client_address = (peer, 12345)
+            self.headers = {"X-Forwarded-For": xff}
+
+    def _handler(self, peer, xff=""):
+        return self._Handler(peer, xff)
+
+    def test_untrusted_peer_cannot_claim_another_address(self):
+        from hermes import server
+        db.set_setting("server.trusted_proxy", "")
+        h = self._handler("198.51.100.7", "1.2.3.4")
+        self.assertEqual(server.client_ip(h), "198.51.100.7")
+
+    def test_a_named_proxy_is_believed(self):
+        from hermes import server
+        db.set_setting("server.trusted_proxy", "127.0.0.1")
+        try:
+            h = self._handler("127.0.0.1", "203.0.113.9, 10.0.0.1")
+            self.assertEqual(server.client_ip(h), "203.0.113.9")
+        finally:
+            db.set_setting("server.trusted_proxy", "")
+
+    def test_a_different_peer_is_still_not_believed(self):
+        from hermes import server
+        db.set_setting("server.trusted_proxy", "127.0.0.1")
+        try:
+            h = self._handler("198.51.100.7", "203.0.113.9")
+            self.assertEqual(server.client_ip(h), "198.51.100.7")
+        finally:
+            db.set_setting("server.trusted_proxy", "")
+
+
+class RequestCeilings(unittest.TestCase):
+
+    def test_body_limit_is_set_and_sane(self):
+        from hermes import server
+        self.assertGreaterEqual(server.MAX_BODY_BYTES, 256 * 1024)
+        self.assertLessEqual(server.MAX_BODY_BYTES, 16 * 1024 * 1024)
+
+    def test_sockets_time_out(self):
+        from hermes import server
+        self.assertTrue(server.Handler.timeout, "a half-open request must not hold a thread")
+        self.assertLessEqual(server.Handler.timeout, 60)
+
+    def test_the_python_version_is_not_advertised(self):
+        from hermes import server
+        self.assertEqual(server.Handler.sys_version, "")
+
+
 class Packaging(unittest.TestCase):
 
     @unittest.skipUnless(hasattr(sys, "stdlib_module_names"),

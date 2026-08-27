@@ -104,6 +104,7 @@ DEFAULTS = {
     "email.smtp_port": "465",
     "email.allowed_recipients": "",
     "server.allowed_hosts": "",
+    "server.trusted_proxy": "",
 }
 
 

@@ -4,7 +4,9 @@ from __future__ import annotations
 import argparse
 import getpass
 import json
+import os
 import sys
+from pathlib import Path
 import threading
 import time
 import webbrowser
@@ -117,6 +119,73 @@ def cmd_doctor(args) -> int:
         score = f"{card['avg_score']}" if card["avg_score"] is not None else "—"
         print(f"   {a['emoji']} {a['name']:<12} {DIM}{a['provider']}/{a['model']}  "
               f"runs={card['runs']} score={score}{OFF}")
+
+    _print_security_posture()
+    return 0
+
+
+def _print_security_posture() -> None:
+    """What is actually protecting this install, and what is not.
+
+    Most of the security model is fixed in code and needs no checking. What
+    varies is the deployment: where it is bound, who can reach it, how wide the
+    agents' scopes are. Those are the questions worth answering out loud, so
+    nobody discovers the answer by being surprised.
+    """
+    from .runtime import tools
+
+    print(f"\n  {BOLD}Security{OFF}")
+
+    def row(ok, label, detail):
+        dot = f"{GREEN}●{OFF}" if ok else f"{GOLD}!{OFF}"
+        print(f"   {dot} {label:<26} {DIM}{detail}{OFF}")
+
+    secret_mode = oct(config.SECRET_PATH.stat().st_mode & 0o777)[2:] if config.SECRET_PATH.exists() else None
+    home_mode = oct(config.HOME.stat().st_mode & 0o777)[2:] if config.HOME.exists() else None
+    row(secret_mode in (None, "600"), "Key vault permissions",
+        f"secret.key is {secret_mode or 'not created yet'}"
+        + ("" if secret_mode in (None, "600") else " — should be 600"))
+    row(home_mode in (None, "700"), "Home directory",
+        f"{config.HOME} is {home_mode or 'not created yet'}"
+        + ("" if home_mode in (None, "700") else " — should be 700"))
+
+    allowed = db.setting("server.allowed_hosts", "")
+    row("*" not in allowed, "Host allowlist",
+        "any Host accepted — DNS rebinding is possible" if "*" in allowed
+        else (allowed or "loopback only"))
+
+    proxy = db.setting("server.trusted_proxy", "")
+    print(f"   {DIM}·{OFF} {'Trusted proxy':<26} "
+          f"{DIM}{proxy or 'none — X-Forwarded-For is ignored, which is right '
+                          'unless a proxy is in front'}{OFF}")
+
+    wide, shell_agents = [], []
+    home = str(Path.home())
+    for a in db.q("SELECT * FROM agents WHERE archived=0"):
+        roots = db.jload(a["scopes"], {}).get("fs_roots") or [str(config.WORKSPACE)]
+        for r in roots:
+            expanded = os.path.expanduser(r)
+            if expanded in ("/", home) or expanded.rstrip("/") == home:
+                wide.append(f"{a['name']} → {r}")
+        if tools.grant_of(a, "run_shell") != tools.DENY:
+            shell_agents.append(f"{a['name']} ({tools.grant_of(a, 'run_shell')})")
+    row(not wide, "Filesystem scopes",
+        "; ".join(wide) + " — very wide" if wide else "all agents scoped to a folder")
+    row(not shell_agents, "Shell access",
+        ", ".join(shell_agents) + " — can do anything your user can"
+        if shell_agents else "no agent may run commands")
+
+    chain = security.verify_audit()
+    row(chain["ok"], "Audit chain",
+        f"intact · {chain['entries']} entries" if chain["ok"]
+        else f"BROKEN at entry {chain.get('broken_at')} — {chain.get('reason')}")
+
+    print(f"\n   {DIM}Enforced in code and not configurable: "
+          f"{len(security.SENSITIVE_PATHS)} protected path patterns, "
+          f"{len(security.DESTRUCTIVE_COMMANDS)} blocked command patterns, "
+          f"a human on every outgoing email.{OFF}")
+    print(f"   {DIM}Exposing this beyond localhost: see \"Running on a server\" "
+          f"in the README. Put TLS in front; Hermes has none.{OFF}")
     return 0
 
 

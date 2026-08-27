@@ -336,18 +336,26 @@ select { cursor: pointer; appearance: none;
 .task {
   background: var(--surface); border: 1px solid var(--line-soft); border-radius: var(--r);
   padding: 13px 15px; display: flex; gap: 13px; align-items: flex-start;
+  /* The same card is used in a full-width list and in a ~260px board column.
+     Side by side, the buttons were taking their width first and leaving the
+     title four characters, so a task read one word per line. Wrapping lets the
+     actions drop underneath exactly when there is no room for them. */
+  flex-wrap: wrap;
   transition: border-color .14s;
 }
 .task:hover { border-color: var(--line); }
 .task.running { border-color: rgba(79,209,165,.34); background: linear-gradient(90deg, rgba(79,209,165,.05), transparent 40%); }
-.task-b { flex: 1; min-width: 0; }
+.task-b { flex: 1 1 190px; min-width: 0; }
 .task-t { font-weight: 600; font-size: 13.5px; }
 .task-m { font-size: 11.5px; color: var(--muted); margin-top: 3px; display: flex; gap: 9px; flex-wrap: wrap; align-items: center; }
-.task-r { font-size: 12px; color: var(--text-2); margin-top: 8px; padding: 9px 11px; background: var(--ink);
+.task-r { width: 100%; font-size: 12px; color: var(--text-2); margin-top: 8px; padding: 9px 11px; background: var(--ink);
   border-radius: var(--r-sm); border: 1px solid var(--line-soft); white-space: pre-wrap; max-height: 130px; overflow: auto; }
-.task-acts { display: flex; gap: 6px; flex-shrink: 0; }
+.task-acts { display: flex; gap: 6px; flex-shrink: 0; margin-left: auto; }
 
-.board { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; align-items: start; }
+/* 265 keeps all four columns on a 1440 screen. The cards used to be unreadable
+   at this width, but that was the card's own layout starving the title, not the
+   column — fixed above by letting the actions wrap. */
+.board { display: grid; grid-template-columns: repeat(auto-fit, minmax(265px, 1fr)); gap: 14px; align-items: start; }
 .col-h { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; padding: 0 3px; }
 .col-h .t { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--text-2); font-weight: 650; }
 .col-h .n { font-size: 11px; color: var(--muted); background: var(--surface-2); padding: 1px 7px; border-radius: 20px; }
@@ -645,3 +653,70 @@ kbd {
 .crumbs a { color: var(--text-2); text-decoration: none; }
 .crumbs a:hover { color: var(--gold-ink); text-decoration: underline; }
 .crumbs a:last-child { color: var(--text); font-weight: 550; }
+
+
+/* ===================== reachable without a mouse =====================
+   The console has a keyboard layer, which is worth nothing if you cannot see
+   where the keyboard is. :focus-visible only paints for keyboard and
+   assistive-tech focus, so pointer users never see a ring they did not ask for.
+   ==================================================================== */
+
+:where(button, [role="button"], a, summary, .nav-item, .tab, .task, .cap, .pal-row,
+       input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--indigo);
+  outline-offset: 2px;
+  border-radius: var(--r-sm);
+}
+
+/* The gold controls need a ring that reads against gold, not on top of it. */
+.btn-primary:focus-visible { outline-color: var(--text); }
+
+/* A skip link, because the sidebar is a lot of tab stops before the content. */
+.skip {
+  position: absolute; left: -9999px; top: 0; z-index: 200;
+  padding: 10px 16px; border-radius: 0 0 var(--r) 0;
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--line); border-top: 0; font-size: 13px;
+}
+.skip:focus { left: 0; }
+
+/* Screen-reader-only text: the icon buttons say what they do out loud. */
+.sr {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/* ===================== respect the OS motion setting =====================
+   Vestibular disorders are not an edge case, and none of this motion carries
+   information — it is all decoration over a state change that has already
+   happened.
+   ======================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .spin { animation: none !important; border-top-color: var(--gold); }
+}
+
+/* ===================== narrower windows =====================
+   Not a phone app, but a half-width window on a laptop is completely normal and
+   the board should not become unreadable in one.
+   ============================================================ */
+@media (max-width: 1100px) {
+  .grid.g4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .board   { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 760px) {
+  .grid.g4, .grid.g3, .board { grid-template-columns: minmax(0, 1fr); }
+  .topbar { flex-wrap: wrap; height: auto; padding-top: 10px; padding-bottom: 10px; }
+  .filter { flex-wrap: wrap; height: auto; padding: 8px 12px; }
+}
+
+/* High-contrast preference: stop relying on subtle tonal separation. */
+@media (prefers-contrast: more) {
+  :root { --line: #4A548C; --muted: #9AA2CF; }
+  .card, .task, .stat { border-width: 2px; }
+}

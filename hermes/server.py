@@ -8,6 +8,8 @@ from __future__ import annotations
 import json
 import mimetypes
 import queue
+import secrets
+import sys
 import threading
 import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -20,16 +22,85 @@ ALLOWED_HOSTS = ("localhost", "127.0.0.1", "[::1]")
 
 # Set by serve() when the operator deliberately exposes Hermes beyond loopback.
 BIND_HOST = "127.0.0.1"
-_auth_fails: dict[str, list] = {}
+_auth_fails: dict = {}
 _auth_lock = threading.Lock()
 MAX_FAILS, LOCKOUT_SECONDS = 8, 300
 
+# Ceilings that stop a client — authenticated or not — from consuming the box.
+MAX_BODY_BYTES = 2 * 1024 * 1024        # a task brief is text; 2 MB is generous
+MAX_CONNECTIONS = 64                    # one thread each, so this bounds the pool
+MAX_PER_CLIENT = 8                      # …and no single client may take them all
+SOCKET_TIMEOUT = 20                     # seconds a half-finished request may sit
+_slots = threading.BoundedSemaphore(MAX_CONNECTIONS)
+_per_client: dict = {}
+_conn_lock = threading.Lock()
+
+
+def _take_slot(peer: str) -> bool:
+    """Claim a connection slot for this peer, if there is one going.
+
+    A single global ceiling stops the thread pool being exhausted but not the
+    service being denied: one client can still take every slot and everybody
+    else — including the operator — gets a 503. So the ceiling is two-part. The
+    per-client share is the one that keeps the console reachable while someone
+    is hammering the port.
+    """
+    with _conn_lock:
+        if _per_client.get(peer, 0) >= MAX_PER_CLIENT:
+            return False
+        if not _slots.acquire(blocking=False):
+            return False
+        _per_client[peer] = _per_client.get(peer, 0) + 1
+        return True
+
+
+def _free_slot(peer: str) -> None:
+    with _conn_lock:
+        n = _per_client.get(peer, 0)
+        if n <= 1:
+            _per_client.pop(peer, None)
+        else:
+            _per_client[peer] = n - 1
+        try:
+            _slots.release()
+        except ValueError:
+            pass
+
+
+def client_ip(handler) -> str:
+    """Who is asking, as accurately as this deployment allows.
+
+    Behind a reverse proxy every request arrives from the proxy, so the socket
+    address is the same for everyone and per-client limits become per-server
+    limits. X-Forwarded-For fixes that, but only if a proxy you trust is setting
+    it — otherwise any client can claim to be anyone. So it is read only when
+    the operator has named the proxy in `server.trusted_proxy`.
+    """
+    peer = handler.client_address[0] if handler.client_address else "?"
+    trusted = [h.strip() for h in db.setting("server.trusted_proxy", "").split(",") if h.strip()]
+    if trusted and peer in trusted:
+        fwd = handler.headers.get("X-Forwarded-For", "")
+        first = fwd.split(",")[0].strip()
+        if first:
+            return first[:64]
+    return peer
+
 
 def _throttled(ip: str) -> float:
-    """Seconds remaining in lockout, or 0. Stops token brute-forcing."""
+    """Seconds remaining in lockout, or 0. Slows token brute-forcing.
+
+    Only ever consulted for a request that failed to authenticate — a caller
+    holding the right token is never throttled. That asymmetry is the point:
+    otherwise anyone able to reach the port could lock the operator out of their
+    own console just by spraying wrong tokens, which is a denial of service
+    dressed as a security control.
+    """
     with _auth_lock:
         fails = [t for t in _auth_fails.get(ip, []) if db.now() - t < LOCKOUT_SECONDS]
-        _auth_fails[ip] = fails
+        if fails:
+            _auth_fails[ip] = fails
+        else:
+            _auth_fails.pop(ip, None)      # do not grow a dict per attacker IP
         if len(fails) >= MAX_FAILS:
             return LOCKOUT_SECONDS - (db.now() - fails[0])
     return 0
@@ -37,6 +108,8 @@ def _throttled(ip: str) -> float:
 
 def _record_fail(ip: str) -> None:
     with _auth_lock:
+        if len(_auth_fails) > 4096:        # bounded: an IP spray cannot eat memory
+            _auth_fails.clear()
         _auth_fails.setdefault(ip, []).append(db.now())
     security.audit("system", "auth.failed", {"ip": ip})
 
@@ -549,11 +622,38 @@ def _pull_ollama(model: str) -> None:
 # ----------------------------------------------------------------- handler
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = f"Hermes/{__version__}"
+    server_version = "Hermes"
+    sys_version = ""            # do not advertise the Python build to the network
     protocol_version = "HTTP/1.1"
+    timeout = SOCKET_TIMEOUT    # a half-finished request cannot hold a thread forever
 
     def log_message(self, fmt, *args):
         pass  # quiet; the console is for Hermes' own output
+
+    def _harden(self) -> None:
+        """Headers that hold whether or not the console behaves.
+
+        The console is a single-origin page that talks only to itself, so it can
+        afford a policy this tight: nothing loads from anywhere else, nothing
+        can frame it, and no request it makes can carry the URL — which matters
+        because the live-stream URL carries the session token.
+        """
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("Permissions-Policy",
+                         "camera=(), microphone=(), geolocation=(), payment=(), usb=()")
+        self.send_header("Content-Security-Policy",
+                         "default-src 'self'; "
+                         # the console is hand-written inline handlers and one
+                         # boot script; 'unsafe-inline' is required for those,
+                         # and the value of the policy here is the origin lock
+                         # below, which is what stops anything being exfiltrated.
+                         "script-src 'self' 'unsafe-inline'; "
+                         "style-src 'self' 'unsafe-inline'; "
+                         "img-src 'self' data:; font-src 'self' data:; "
+                         "connect-src 'self'; frame-ancestors 'none'; "
+                         "base-uri 'none'; form-action 'none'; object-src 'none'")
 
     def _guard(self) -> bool:
         host = (self.headers.get("Host") or "").rsplit(":", 1)[0].strip("[]")
@@ -571,37 +671,55 @@ class Handler(BaseHTTPRequestHandler):
         if not parsed.path.startswith("/api/"):
             return True  # static assets carry no data
 
-        ip = self.client_address[0] if self.client_address else "?"
+        # EventSource cannot set a header, so the live stream — and only the
+        # live stream — may carry the token in the query. Everywhere else it
+        # must be a header, so the token stays out of proxy logs, browser
+        # history and Referer.
+        supplied = self.headers.get("X-Hermes-Token") or ""
+        if not supplied and parsed.path == "/api/events":
+            supplied = parse_qs(parsed.query).get("token", [""])[0]
+
+        ip = client_ip(self)
+        if security.check_token(supplied):
+            with _auth_lock:
+                _auth_fails.pop(ip, None)
+            return True
+
+        # Only a failed attempt meets the lockout, so a valid token can always
+        # get in no matter how much noise someone else is making.
         wait = _throttled(ip)
         if wait > 0:
             self._send(429, {"error": f"Too many failed attempts. Try again in {int(wait)}s."})
             return False
-
-        supplied = (self.headers.get("X-Hermes-Token")
-                    or parse_qs(parsed.query).get("token", [""])[0])
-        if not security.check_token(supplied):
-            _record_fail(ip)
-            self._send(401, {"error": "Unauthorised. Open Hermes from the link printed "
-                                      "in your terminal, or paste your session token."})
-            return False
-        with _auth_lock:
-            _auth_fails.pop(ip, None)
-        return True
+        _record_fail(ip)
+        self._send(401, {"error": "Unauthorised. Open Hermes from the link printed "
+                                  "in your terminal, or paste your session token."})
+        return False
 
     def _send(self, code: int, payload: dict) -> None:
         body = json.dumps(payload).encode()
-        self.send_response(code)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self._harden()
+            self.end_headers()
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            pass    # the client hung up mid-reply; nothing useful to do
 
     def _static(self, path: str) -> None:
         rel = "index.html" if path in ("/", "") else path.lstrip("/")
         rel = rel.split("?")[0]
-        target = (config.WEB_DIR / rel).resolve()
-        if not str(target).startswith(str(config.WEB_DIR.resolve())) or not target.is_file():
+        root = config.WEB_DIR.resolve()
+        target = (root / rel).resolve()
+        # A string prefix would also match a sibling called web-something; ask
+        # the path itself whether it is inside.
+        if target != root and root not in target.parents:
+            self.send_error(404)
+            return
+        if not target.is_file():
             self.send_error(404)
             return
         data = target.read_bytes()
@@ -610,6 +728,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", "no-store")
+        self._harden()
         self.end_headers()
         self.wfile.write(data)
 
@@ -618,6 +737,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "text/event-stream")
         self.send_header("Cache-Control", "no-cache")
         self.send_header("Connection", "keep-alive")
+        self.send_header("X-Accel-Buffering", "no")   # nginx must not buffer a stream
+        self._harden()
         self.end_headers()
         q = bus.subscribe()
         try:
@@ -649,12 +770,36 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_error(405)
             return
         body = {}
-        length = int(self.headers.get("Content-Length") or 0)
+        raw_len = self.headers.get("Content-Length") or "0"
+        try:
+            length = int(raw_len)
+        except ValueError:
+            # Garbage here used to raise straight out of the handler, killing the
+            # thread and printing a traceback full of absolute paths.
+            self._send(400, {"error": "Content-Length was not a number"})
+            return
+        if length < 0:
+            self._send(400, {"error": "Content-Length was negative"})
+            return
+        if length > MAX_BODY_BYTES:
+            self._send(413, {"error": f"Request body too large "
+                                      f"(limit {MAX_BODY_BYTES // 1024} KB)"})
+            return
         if length:
             try:
-                body = json.loads(self.rfile.read(length).decode() or "{}")
+                raw = self._read_exactly(length)
+            except (TimeoutError, OSError):
+                # A body that was announced and never sent used to park this
+                # thread for as long as the client cared to hold it.
+                self._send(408, {"error": "Timed out reading the request body"})
+                return
+            try:
+                body = json.loads(raw.decode(errors="replace") or "{}")
             except json.JSONDecodeError:
                 self._send(400, {"error": "Request body was not valid JSON"})
+                return
+            if not isinstance(body, dict):
+                self._send(400, {"error": "Request body must be a JSON object"})
                 return
         try:
             self._send(200, api(method, parsed.path, parse_qs(parsed.query), body))
@@ -662,9 +807,29 @@ class Handler(BaseHTTPRequestHandler):
             self._send(e.code, {"error": str(e)})
         except providers.ProviderError as e:
             self._send(502, {"error": str(e)})
-        except Exception as e:
+        except Exception:
+            # The detail goes to the operator's own terminal and the audit log.
+            # What crosses the wire is a reference, because an exception string
+            # is a good way to hand an attacker your filesystem layout.
+            ref = secrets.token_hex(4)
+            print(f"\n[hermes] internal error {ref}", file=sys.stderr)
             traceback.print_exc()
-            self._send(500, {"error": f"{type(e).__name__}: {e}"})
+            security.audit("system", "server.error",
+                           {"ref": ref, "path": parsed.path, "method": method})
+            self._send(500, {"error": f"Something went wrong inside Hermes. "
+                                      f"Reference {ref} — the detail is in the "
+                                      f"terminal running the server."})
+
+    def _read_exactly(self, length: int) -> bytes:
+        """Read exactly `length` bytes, or give up rather than wait forever."""
+        chunks, remaining = [], length
+        while remaining > 0:
+            chunk = self.rfile.read(min(remaining, 65536))
+            if not chunk:
+                raise OSError("client stopped sending")
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        return b"".join(chunks)
 
     def do_GET(self):
         self._handle("GET")
@@ -679,6 +844,57 @@ class Handler(BaseHTTPRequestHandler):
         self._handle("DELETE")
 
 
+class _BoundedServer(ThreadingHTTPServer):
+    """A thread-per-connection server with a ceiling on the threads.
+
+    ThreadingHTTPServer will happily start a thread for every connection it is
+    offered, and a connection that never finishes its request holds that thread
+    for as long as the client likes. Two hundred half-open sockets was enough to
+    park two hundred threads here, from a client that never authenticated. The
+    semaphore makes that bounded, and the socket timeout on the handler makes it
+    temporary.
+    """
+
+    daemon_threads = True
+    allow_reuse_address = True
+    request_queue_size = 128
+    _peers: dict = {}
+
+    def process_request(self, request, client_address):
+        peer = client_address[0] if client_address else "?"
+        if not _take_slot(peer):
+            # Refuse politely rather than queue: a client that cannot be served
+            # now should be told, not held. Closing the socket directly rather
+            # than through shutdown_request matters — that path frees a slot,
+            # and this connection never took one.
+            try:
+                request.sendall(b"HTTP/1.1 503 Service Unavailable\r\n"
+                                b"Content-Length: 0\r\nConnection: close\r\n\r\n")
+            except OSError:
+                pass
+            try:
+                request.close()
+            except OSError:
+                pass
+            return
+        self._peers[request] = peer
+        try:
+            super().process_request(request, client_address)
+        except BaseException:
+            # The worker thread never started, so nothing else will give it back.
+            _free_slot(self._peers.pop(request, peer))
+            raise
+
+    def close_request(self, request):
+        # Reached exactly once per served connection, via shutdown_request.
+        peer = self._peers.pop(request, "?")
+        try:
+            super().close_request(request)
+        finally:
+            if peer != "?":
+                _free_slot(peer)
+
+
 def serve(port: int = config.DEFAULT_PORT, host: str = "127.0.0.1") -> ThreadingHTTPServer:
     global BIND_HOST
     BIND_HOST = host
@@ -689,6 +905,5 @@ def serve(port: int = config.DEFAULT_PORT, host: str = "127.0.0.1") -> Threading
     if db.setting("workforce.enabled", "1") == "1":
         workforce.start()
     security.audit("system", "server.started", {"port": port, "host": host})
-    httpd = ThreadingHTTPServer((host, port), Handler)
-    httpd.daemon_threads = True
+    httpd = _BoundedServer((host, port), Handler)
     return httpd
