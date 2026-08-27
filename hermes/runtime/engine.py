@@ -101,6 +101,11 @@ def decide_approval(approval_id: str, approved: bool) -> bool:
         ev = _approval_waiters.get(approval_id)
     if ev:
         ev.set()
+    agent = db.q1("SELECT name FROM agents WHERE id=?", (row["agent_id"],))
+    security.audit(agent["name"] if agent else "operator",
+                   "tool.approved" if approved else "tool.denied",
+                   {"tool": row["tool"], "approval_id": approval_id,
+                    "run_id": row["run_id"], "by": "human"})
     bus.emit("approval_decided", {"id": approval_id, "approved": approved}, run_id=row["run_id"])
     return True
 

@@ -77,6 +77,23 @@ class ProtectedPaths(unittest.TestCase):
         self.assertIn("more salt", out, "ordinary files must still be searchable")
         self.assertIn("protected file(s) skipped", out, "skipping must be visible, not silent")
 
+    def test_a_glob_query_finds_files_by_name(self):
+        """An agent asking for "*.md" means "which markdown files are here".
+        Answering "no matches" once made an agent write "no markdown files
+        found" over a folder that was full of them."""
+        out = tools.t_search_files(agent(), {"query": "*.txt", "path": str(WORK)}, {})
+        self.assertIn("notes.txt", out)
+        self.assertIn("filename match", out)
+
+    def test_a_glob_never_reaches_a_protected_file(self):
+        out = tools.t_search_files(agent(), {"query": "*.pem", "path": str(WORK)}, {})
+        self.assertNotIn("server.pem", out)
+        self.assertIn("protected file(s) skipped", out)
+
+    def test_a_plain_query_still_searches_contents(self):
+        out = tools.t_search_files(agent(), {"query": "more salt", "path": str(WORK)}, {})
+        self.assertIn("more salt", out)
+
     def test_hermes_own_state_is_off_limits(self):
         for target in (config.SECRET_PATH, security.TOKEN_PATH, config.DB_PATH):
             with self.assertRaises(security.SecurityViolation):
@@ -329,6 +346,29 @@ class AuditChain(unittest.TestCase):
     def test_audit_table_exists_after_a_plain_db_init(self):
         """`hermes run` on a fresh install used to crash on a missing table."""
         self.assertIsInstance(security.verify_audit()["entries"], int)
+
+    def test_a_human_decision_is_recorded(self):
+        """The operator's yes or no is the most consequential action in the
+        system, and it was the one thing missing from the chain."""
+        from hermes.runtime import engine
+        aid = db.nid()
+        db.ex("""INSERT INTO approvals(id,run_id,agent_id,tool,args,state,created_at)
+                 VALUES(?,?,?,?,?,'pending',?)""",
+              (aid, "run-x", "test-agent", "write_file", "{}", db.now()))
+        self.assertTrue(engine.decide_approval(aid, True))
+        row = db.q1("SELECT action, detail FROM audit ORDER BY seq DESC LIMIT 1")
+        self.assertEqual(row["action"], "tool.approved")
+        self.assertIn("write_file", row["detail"])
+        self.assertIn('"by": "human"', row["detail"])
+
+        aid2 = db.nid()
+        db.ex("""INSERT INTO approvals(id,run_id,agent_id,tool,args,state,created_at)
+                 VALUES(?,?,?,?,?,'pending',?)""",
+              (aid2, "run-x", "test-agent", "run_shell", "{}", db.now()))
+        engine.decide_approval(aid2, False)
+        self.assertEqual(db.q1("SELECT action FROM audit ORDER BY seq DESC LIMIT 1")["action"],
+                         "tool.denied")
+        self.assertTrue(security.verify_audit()["ok"], "the chain must survive both")
 
     def test_secrets_never_reach_the_log(self):
         security.audit("tester", "test.secret", {"key": "sk-ant-" + "z" * 40})

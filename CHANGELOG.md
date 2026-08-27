@@ -3,6 +3,59 @@
 All notable changes to Hermes are recorded here.
 This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] — 2026-08-26
+
+Found by running the published build end to end against a local model — a fresh
+`curl | bash` install, real multi-step agent tasks, the dispatcher working an unattended
+queue, and the security floor probed from inside a live run. The agent loop, the quality
+gate, the approval path, the sandbox and the audit chain all held. These are the gaps that
+showed up around them.
+
+### The record was missing the decisions that matter most
+
+- **A human approving or denying a tool call was never audited.** The README promised the
+  chain covered "every tool call, approval, key change and run", and the operator's yes or
+  no — the single most consequential action in the system — was the one thing absent from
+  it. `tool.approved` / `tool.denied` now go into the chain with the tool and run.
+- **Storing or clearing an API key was not audited either**, from the console or the CLI.
+  It is now, recording only that the key moved, never its value.
+- **Pausing the workforce left no trace.** Starting the dispatcher announced itself in the
+  live feed and stopping it did not, so a paused workforce looked like a quiet one.
+
+### An API call could fail silently
+
+- **`POST /api/agents/<id>/<anything>` answered 200 OK and did nothing.** An unrecognised
+  subresource fell through to the plain GET, so a script setting an agent's autonomy got a
+  success and a completely unchanged agent. It now returns 404 naming the right route, and
+  an unsupported method on an agent returns 405.
+
+### `search_files` could not find files
+
+- **A query like `*.md` returned "no matches"** because the tool only grepped contents,
+  never filenames — and models reach for it as a file finder constantly. In a real run this
+  made an agent conclude a folder full of markdown was empty and write "No Markdown Files
+  Found" over it. A glob now searches names, a plain query searches contents *and* names,
+  and the result says how many matched which way. The protected-path floor still applies to
+  both.
+
+### `hermes run` hid its best feature
+
+- **Quality-gate activity was invisible from the CLI.** The gate ran, rejected work and sent
+  agents back to redo it — and `hermes run` printed none of it, so the most valuable thing
+  the system did happened silently. It now shows the gate checking, passing, and exactly
+  what it sent back.
+- **`hermes doctor` reported "0 configured" agents on a fresh install**, then `hermes agents`
+  showed three. Doctor seeds like the other commands now.
+
+### Automatic scoring says that it is off
+
+- Scoring needs a judge model and is off by default, because it costs a second model call
+  per run. Nothing said so: **Performance** simply showed blanks forever. It now explains
+  the blank and links to the setting, and the README no longer implies grading is automatic.
+  The quality gate, which is always on, is described separately from scoring, which is not.
+
+---
+
 ## [1.1.0] — 2026-08-26
 
 ### The console gained a keyboard
@@ -131,5 +184,6 @@ the fix.
   requires a real file on disk before taking that branch. A CI job runs the installer
   through a pipe on every push.
 
+[1.2.0]: https://github.com/at0m-b0mb/Hermes-Agent-Console/releases/tag/v1.2.0
 [1.1.0]: https://github.com/at0m-b0mb/Hermes-Agent-Console/releases/tag/v1.1.0
 [1.0.0]: https://github.com/at0m-b0mb/Hermes-Agent-Console/releases/tag/v1.0.0

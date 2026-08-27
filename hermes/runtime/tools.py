@@ -7,6 +7,7 @@ allowed, writes and shell ask first, and nothing is silently destructive.
 """
 from __future__ import annotations
 
+import fnmatch
 import json
 import os
 import shlex
@@ -104,8 +105,16 @@ def t_list_dir(agent, args, ctx):
 
 def t_search_files(agent, args, ctx):
     root = _safe_path(agent, args.get("path", "."))
-    needle = args["query"].lower()
+    raw = str(args["query"])
+    needle = raw.lower()
+    # A query like "*.md" is a filename pattern, not text to grep for. Models
+    # reach for this constantly, and answering "no matches" sends them off to
+    # invent a workaround — one of them wrote "no markdown files found" over a
+    # folder full of markdown. So: globs search names, plain queries search
+    # content *and* names.
+    is_glob = any(ch in raw for ch in "*?[")
     hits = []
+    named = 0
     skipped = 0
 
     def _footer(body):
@@ -125,6 +134,13 @@ def t_search_files(agent, args, ctx):
             except security.SecurityViolation:
                 skipped += 1
                 continue
+            if fnmatch.fnmatch(fn.lower(), needle) if is_glob else needle in fn.lower():
+                hits.append(f"{fp}  (filename match)")
+                named += 1
+                if len(hits) >= 80:
+                    return _footer("\n".join(hits) + "\n… (truncated at 80 matches)")
+            if is_glob:
+                continue          # a glob is about names; grepping for it is noise
             try:
                 if fp.stat().st_size > 2_000_000:
                     continue
@@ -135,7 +151,11 @@ def t_search_files(agent, args, ctx):
                             return _footer("\n".join(hits) + "\n… (truncated at 80 matches)")
             except (OSError, UnicodeDecodeError):
                 continue
-    return _footer("\n".join(hits) or f"No matches for '{args['query']}' under {root}")
+    if not hits:
+        return _footer(f"No matches for '{raw}' under {root}")
+    head = (f"{len(hits)} match(es) for '{raw}' under {root}"
+            + (f", {named} by filename" if named else "") + "\n")
+    return _footer(head + "\n".join(hits))
 
 
 def t_run_shell(agent, args, ctx):
@@ -266,8 +286,10 @@ SPECS = [
      "desc": "List the contents of a directory.",
      "params": {"path": "directory path (default '.')"}},
     {"name": "search_files", "fn": t_search_files, "required": ["query"], "group": "Filesystem", "danger": "low",
-     "desc": "Recursively grep for text under a directory.",
-     "params": {"query": "text to find", "path": "root to search (default '.')"}},
+     "desc": "Find files under a directory. A plain query searches file contents and "
+             "names; a glob like '*.md' searches names only.",
+     "params": {"query": "text to find, or a filename glob like *.md",
+                "path": "root to search (default '.')"}},
     {"name": "write_file", "fn": t_write_file, "required": ["path", "content"], "group": "Filesystem", "danger": "high",
      "desc": "Create or overwrite a file. Overwrites without warning.",
      "params": {"path": "path to write", "content": "full file contents"}},

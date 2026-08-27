@@ -149,6 +149,7 @@ const App = {
       eval_done:       ['gold','★', `scored <b>${p.score}</b>/100`, esc(p.notes || '')],
       ollama_pull:     ['info','⇩', `Ollama pull ${esc(p.state)}`, esc(p.model)],
       workforce_started: ['ok','⚙', 'workforce dispatcher started', ''],
+      workforce_stopped: ['info','⏸', 'workforce paused — agents will not pick up new work', ''],
     };
     const m = M[ev.kind];
     if (!m) return null;
@@ -542,8 +543,17 @@ const App = {
     this.set('<div class="empty"><span class="spin"></span></div>');
     const { agents } = await this.api('/api/leaderboard');
     if (!agents.length) return this.set('<div class="empty"><p>No agents yet.</p></div>');
+    const b = this.boot || await this.api('/api/bootstrap');
+    const judging = !!(b.settings && b.settings['judge.provider'] && b.settings['judge.model']);
     this.set(`
-      <p class="muted" style="font-size:12.5px;margin-bottom:16px">Every completed run can be scored two ways: a judge model grades it automatically against a fixed rubric, and you can rate it yourself. Your rating always wins.</p>
+      <p class="muted" style="font-size:12.5px;margin-bottom:16px">Every completed run can be scored two ways: a judge model grades it against a fixed rubric, and you can rate it yourself. Your rating always wins.</p>
+      ${judging ? '' : `<div class="card" style="margin-bottom:16px;border-left:2px solid var(--gold)">
+        <div class="card-h"><h3>Automatic scoring is off</h3></div>
+        <p class="muted" style="font-size:12.5px">Scores stay blank until you pick a judge model — it is off by
+        default because judging costs a second model call per run. The quality gate, which checks the work was
+        actually done, runs regardless.</p>
+        <div style="margin-top:12px"><button class="btn btn-primary btn-sm" onclick="App.go('settings')">Choose a judge model</button></div>
+      </div>`}
       <div class="grid g3">
         ${agents.map(a => `<div class="card" style="border-left:2px solid ${esc(a.accent)}">
           <div class="agent-top" style="margin-bottom:14px">

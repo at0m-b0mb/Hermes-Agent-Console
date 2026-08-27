@@ -16,7 +16,7 @@ quality gate checks what it actually did before it is allowed to call anything f
 [![Python](https://img.shields.io/badge/Python-3.9%2B-5C6CF2?style=for-the-badge&labelColor=0B0E1D)](https://python.org)
 [![Dependencies](https://img.shields.io/badge/Dependencies-zero-4FD1A5?style=for-the-badge&labelColor=0B0E1D)](#why-zero-dependencies)
 [![Offline](https://img.shields.io/badge/Runs-fully%20offline-A87CF0?style=for-the-badge&labelColor=0B0E1D)](#pick-a-brain-ai-backends)
-[![Tests](https://img.shields.io/badge/Tests-38%20passing-4FD1A5?style=for-the-badge&labelColor=0B0E1D)](#verification)
+[![Tests](https://img.shields.io/badge/Tests-42%20passing-4FD1A5?style=for-the-badge&labelColor=0B0E1D)](#verification)
 
 <br>
 
@@ -358,13 +358,19 @@ agent tries a different approach rather than repeating itself.
 
 ### 7 · Judging the work
 
-Every completed run is scored two ways:
+Two different things run here, and it is worth keeping them apart:
 
-- **Automatically** — a judge model grades correctness, completeness, efficiency and safety
-- **By you** — rate any run 0–100 in the run drawer
+- **The quality gate** is always on. Before an agent may call a task finished, a second
+  pass checks whether the work was performed or only described, and sends it back naming
+  the specific gap. This is what stops an agent *reporting* success it did not achieve.
+- **Scoring is opt-in.** Set a judge model in **Settings → Quality gate** and every
+  completed run is graded 0–100 on correctness, completeness, efficiency and safety. It is
+  off by default because it costs a second model call per run — until you turn it on,
+  **Performance** shows blanks and says so.
+- **Your own rating** — 0–100 in the run drawer — always wins over the judge.
 
-**Your rating always wins.** **Performance** shows scorecards, success rates, cost and score
-trend per agent, so "which of my agents is actually any good" has an answer.
+**Performance** shows scorecards, success rates, cost and score trend per agent, so "which
+of my agents is actually any good" has an answer.
 
 ---
 
@@ -684,7 +690,7 @@ python3 tests/test_hermes.py
 ```
 
 ```
-Ran 38 tests in 1.1s
+Ran 42 tests in 1.1s
 
 OK
 ```

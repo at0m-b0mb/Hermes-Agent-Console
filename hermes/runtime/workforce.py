@@ -156,6 +156,9 @@ def start() -> None:
 
 def stop() -> None:
     _stop.set()
+    # Starting the dispatcher announced itself and stopping it did not, so
+    # pausing your whole workforce left no trace in the live feed.
+    bus.emit("workforce_stopped", {})
 
 
 def running() -> bool:

@@ -96,6 +96,7 @@ def cmd_serve(args) -> int:
 
 def cmd_doctor(args) -> int:
     db.init()
+    _seed()
     print(BANNER)
     print(f"  {BOLD}Python{OFF}      {sys.version.split()[0]}")
     print(f"  {BOLD}Home{OFF}        {config.HOME}")
@@ -146,6 +147,8 @@ def cmd_key(args) -> int:
         return 1
     raw = args.value or getpass.getpass(f"API key for {args.provider} (hidden): ")
     db.set_key(args.provider, raw.strip())
+    security.audit("operator", "key.set" if raw.strip() else "key.cleared",
+                   {"provider": args.provider})
     st = providers.status(args.provider)
     dot = f"{GREEN}●{OFF}" if st["ok"] else f"{RED}○{OFF}"
     print(f"  {dot} {args.provider}: {st['detail']}  {DIM}(encrypted in {config.HOME}){OFF}")
@@ -250,6 +253,12 @@ def cmd_run(args) -> int:
             elif k == "tool_result":
                 mark = f"{GREEN}✓{OFF}" if p["ok"] else f"{RED}✗{OFF}"
                 print(f"  {mark} {DIM}{p['output'][:300]}{OFF}")
+            elif k == "verifying":
+                print(f"  {DIM}⚖ quality gate checking the work…{OFF}")
+            elif k == "verify_passed":
+                print(f"  {GREEN}⚖ quality gate passed{OFF}")
+            elif k == "verify_rejected":
+                print(f"  {GOLD}⚖ sent back — still outstanding: {p['missing'][:200]}{OFF}")
             elif k == "approval_requested":
                 pending.append(p)
             elif k == "escalation":

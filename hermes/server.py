@@ -147,7 +147,11 @@ def api(method: str, path: str, query: dict, body: dict) -> dict:
 
     if head == "keys" and method == "POST":
         _require(body, "provider")
-        db.set_key(body["provider"], body.get("key", "").strip())
+        raw = body.get("key", "").strip()
+        db.set_key(body["provider"], raw)
+        # The key itself never enters the record — only the fact that it moved.
+        security.audit("operator", "key.set" if raw else "key.cleared",
+                       {"provider": body["provider"]})
         return {"ok": True, "provider": body["provider"], "status": providers.status(body["provider"])}
 
     if head == "settings":
@@ -221,6 +225,16 @@ def api(method: str, path: str, query: dict, body: dict) -> dict:
         if method == "DELETE":
             db.ex("UPDATE agents SET archived=1 WHERE id=?", (rid,))
             return {"ok": True}
+
+        # An unrecognised subresource used to fall through to the GET below, so
+        # POSTing to something like /api/agents/<id>/autonomy answered 200 OK
+        # and changed nothing. A caller cannot tell that apart from success.
+        if sub:
+            raise ApiError(f"No such agent subresource '{sub}'. Editable fields go to "
+                           f"PATCH /api/agents/{rid}.", 404)
+        if method != "GET":
+            raise ApiError(f"{method} is not supported on an agent. Use PATCH to edit "
+                           "it, or DELETE to archive it.", 405)
         return {"agent": _agent_row(agent)}
 
     # -- tasks -------------------------------------------------------------
