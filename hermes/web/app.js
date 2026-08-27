@@ -58,6 +58,13 @@ const App = {
     await this.refresh();
     this.go(location.hash.slice(1) || 'command');
     setInterval(() => this.refresh(true), 6000);
+    // The elapsed clocks tick on their own so a long run visibly moves rather
+    // than jumping every six seconds.
+    setInterval(() => {
+      for (const el of document.querySelectorAll('.live-t[data-since]')) {
+        el.textContent = '◷ ' + dur(Date.now() / 1000 - Number(el.dataset.since));
+      }
+    }, 1000);
   },
 
   /* -------------------------------------------------------------- data */
@@ -74,16 +81,25 @@ const App = {
 
   async refresh(quiet) {
     try {
-      const [agents, tasks, approvals, escalations, stats, wf] = await Promise.all([
+      const [agents, tasks, approvals, escalations, stats, wf, runs] = await Promise.all([
         this.api('/api/agents'), this.api('/api/tasks?limit=200'),
         this.api('/api/approvals'), this.api('/api/escalations'),
         this.api('/api/stats'), this.api('/api/workforce'),
+        this.api('/api/runs?limit=60'),
       ]);
       Object.assign(this.state, {
         agents: agents.agents, tasks: tasks.tasks, approvals: approvals.approvals,
         escalations: escalations.escalations, stats, workforce: wf,
+        runs: runs.runs || [],
       });
       this.renderNav(); this.renderWorkforce();
+      if (this.view === 'work' && quiet && document.getElementById('boardBody')) {
+        // Re-render the cards in place; a full re-render would blow away what
+        // you were typing in the filter box every six seconds.
+        this.paintBoard(document.getElementById('workQ')?.value ?? this.state.workQ);
+        this.renderNav(); this.renderWorkforce();
+        return;
+      }
       if (!quiet || ['command', 'agents', 'work'].includes(this.view)) this.render();
     } catch (e) { if (!quiet) this.toast(e.message, 'err'); }
   },
@@ -386,16 +402,14 @@ const App = {
     el.classList.add('on');
     const body = document.getElementById('workBody');
     if (which === 'board') {
-      const cols = [['queued', 'Queued'], ['running', 'In progress'], ['done', 'Completed'],
-                    ['failed', 'Needs attention']];
-      const bucket = st => this.state.tasks.filter(t =>
-        st === 'failed' ? ['failed', 'incomplete', 'halted', 'cancelled'].includes(t.status) : t.status === st);
-      body.innerHTML = `<div class="board">${cols.map(([k, label]) => {
-        const items = bucket(k);
-        return `<div><div class="col-h"><span class="t">${label}</span><span class="n">${items.length}</span></div>
-          <div class="col-body">${items.length ? items.slice(0, 30).map(t => this.taskRow(t)).join('')
-            : `<div class="card" style="padding:22px;text-align:center"><span class="muted" style="font-size:12px">empty</span></div>`}</div></div>`;
-      }).join('')}</div>`;
+      body.innerHTML = `
+        <div class="filter">
+          <span>⌕</span>
+          <input id="workQ" placeholder="Filter by title, brief or agent…" autocomplete="off"
+                 value="${esc(this.state.workQ || '')}" oninput="App.paintBoard(this.value)">
+        </div>
+        <div id="boardBody"></div>`;
+      this.paintBoard(this.state.workQ || '');
     } else {
       const d = await this.api('/api/duties');
       this.state.duties = d.duties;
@@ -409,6 +423,34 @@ const App = {
             : `<div class="empty"><div class="big">⏱</div><p>No standing duties. Add one for anything that should happen on a schedule — a daily summary, an hourly check, a weekly tidy-up.</p></div>`}
         </div>`;
     }
+  },
+
+  paintBoard(q) {
+    this.state.workQ = q || '';
+    const el = document.getElementById('boardBody');
+    if (!el) return;
+    const needle = this.state.workQ.toLowerCase().trim();
+    const match = t => {
+      if (!needle) return true;
+      const a = this.state.agents.find(x => x.id === t.agent_id);
+      return `${t.title} ${t.brief || ''} ${a ? a.name : ''}`.toLowerCase().includes(needle);
+    };
+    const cols = [['queued', 'Queued'], ['running', 'In progress'], ['done', 'Completed'],
+                  ['failed', 'Needs attention']];
+    const bucket = st => this.state.tasks.filter(t => match(t) && (
+      st === 'failed' ? ['failed', 'incomplete', 'halted', 'cancelled'].includes(t.status)
+                      : t.status === st));
+    const total = cols.reduce((n, [k]) => n + bucket(k).length, 0);
+    if (needle && !total) {
+      el.innerHTML = `<div class="empty"><p>No task matches “${esc(needle)}”.</p></div>`;
+      return;
+    }
+    el.innerHTML = `<div class="board">${cols.map(([k, label]) => {
+      const items = bucket(k);
+      return `<div><div class="col-h"><span class="t">${label}</span><span class="n">${items.length}</span></div>
+        <div class="col-body">${items.length ? items.slice(0, 30).map(t => this.taskRow(t)).join('')
+          : `<div class="card" style="padding:22px;text-align:center"><span class="muted" style="font-size:12px">empty</span></div>`}</div></div>`;
+    }).join('')}</div>`;
   },
 
   dutyRow(d) {
@@ -441,6 +483,13 @@ const App = {
 
   taskRow(t) {
     const a = this.state.agents.find(x => x.id === t.agent_id);
+    // A run that has been going twenty minutes and a run that started ten
+    // seconds ago look identical without this, and the difference is the whole
+    // question you are asking when you look at the board.
+    const live = t.status === 'running'
+      ? (this.state.runs || []).find(r => r.task_id === t.id && r.status === 'running') : null;
+    const waiting = t.status === 'running'
+      && this.state.approvals.some(ap => live && ap.run_id === live.id);
     const P = { queued: 'p-grey', running: 'p-green', done: 'p-green', failed: 'p-red',
                 incomplete: 'p-red', halted: 'p-red', cancelled: 'p-grey' };
     const src = { duty: '⏱ duty', plan: '⚑ self-planned', operator: '' }[t.source] || '';
@@ -454,6 +503,8 @@ const App = {
           ${src ? `<span class="muted">${src}</span>` : ''}
           ${t.attempts > 0 ? `<span class="muted">attempt ${t.attempts + 1}</span>` : ''}
           <span class="muted">${rel(t.created_at)}</span>
+          ${live ? `<span class="live-t" data-since="${live.started_at}" title="running for">◷ ${dur(Date.now() / 1000 - live.started_at)}</span>` : ''}
+          ${waiting ? `<span class="pill p-gold" title="nothing will happen until you decide">⏸ waiting on you</span>` : ''}
         </div>
         ${t.result ? `<div class="task-r">${esc(t.result.slice(0, 700))}</div>` : ''}
         ${t.error ? `<div class="task-r" style="color:var(--red)">${esc(t.error.slice(0, 400))}</div>` : ''}
@@ -463,7 +514,18 @@ const App = {
           ? `<button class="btn btn-sm btn-danger" onclick="App.cancelTask('${t.id}')">Stop</button>`
           : `<button class="btn btn-sm" onclick="App.runTask('${t.id}')">Run now</button>`}
         <button class="btn btn-sm btn-ghost" onclick="App.openRuns('${t.id}')">Runs</button>
+        ${t.status !== 'running'
+          ? `<button class="btn btn-sm btn-ghost" title="queue this same brief again"
+                     onclick="App.rerun('${t.id}')">↻</button>` : ''}
       </div></div>`;
+  },
+
+  async rerun(taskId) {
+    const t = this.state.tasks.find(x => x.id === taskId);
+    if (!t) return;
+    // Opens the composer rather than firing immediately — the reason you re-run
+    // something is usually that the brief needed a word changing.
+    this.taskDrawer(t.agent_id, { title: t.title, brief: t.brief, priority: t.priority });
   },
 
   async runTask(id) {
@@ -584,9 +646,35 @@ const App = {
     this.set('<div class="empty"><span class="spin"></span></div>');
     const { runs } = await this.api(taskId ? `/api/tasks/${taskId}/runs` : '/api/runs');
     if (!runs.length) return this.set('<div class="empty"><div class="big">⟲</div><p>No runs yet.</p></div>');
-    this.set(`<div class="card"><div class="card-h"><h3>Run history</h3>
-      <span class="count">${runs.length}</span>
-      ${taskId ? `<div class="right"><button class="btn btn-sm" onclick="App.go('runs')">Show all</button></div>` : ''}</div>
+    this._runs = runs;
+    this.set(`
+      <div class="filter">
+        <span>⌕</span>
+        <input id="runQ" placeholder="Filter by task, agent, model or status…" autocomplete="off"
+               oninput="App.paintRuns(this.value)">
+        ${taskId ? `<button class="btn btn-sm btn-ghost" onclick="App.go('runs')">Show all runs</button>` : ''}
+      </div>
+      <div id="runsBody"></div>`);
+    this.paintRuns('');
+  },
+
+  paintRuns(q) {
+    const el = document.getElementById('runsBody');
+    if (!el) return;
+    const needle = (q || '').toLowerCase().trim();
+    const runs = (this._runs || []).filter(r => {
+      if (!needle) return true;
+      const a = this.state.agents.find(x => x.id === r.agent_id);
+      const t = this.state.tasks.find(x => x.id === r.task_id);
+      return `${t ? t.title : ''} ${a ? a.name : ''} ${r.model} ${r.provider} ${r.status}`
+        .toLowerCase().includes(needle);
+    });
+    if (!runs.length) {
+      el.innerHTML = `<div class="empty"><p>No run matches “${esc(needle)}”.</p></div>`;
+      return;
+    }
+    el.innerHTML = `<div class="card"><div class="card-h"><h3>Run history</h3>
+      <span class="count">${runs.length}</span></div>
       ${runs.map(r => {
         const a = this.state.agents.find(x => x.id === r.agent_id);
         const t = this.state.tasks.find(x => x.id === r.task_id);
@@ -599,13 +687,15 @@ const App = {
               <span class="muted">${r.steps} steps</span>
               <span class="muted">${fmtN(r.tokens_in + r.tokens_out)} tok</span>
               <span class="muted">$${r.cost.toFixed(4)}</span>
-              <span class="muted">${(r.latency_ms / 1000).toFixed(1)}s</span>
+              <span class="muted">${r.status === 'running'
+                ? '<span class="live-t" data-since="' + r.started_at + '">◷ ' + dur(Date.now() / 1000 - r.started_at) + '</span>'
+                : (r.latency_ms / 1000).toFixed(1) + 's'}</span>
               <span class="muted">${rel(r.started_at)}</span>
             </div>
           </div>
           <div class="task-acts"><button class="btn btn-sm">Transcript</button></div>
         </div>`;
-      }).join('')}</div>`);
+      }).join('')}</div>`;
   },
 
   openRuns(taskId) { this.view = 'runs'; this.renderNav(); this.vRuns(taskId); },
@@ -1188,22 +1278,23 @@ const App = {
   },
 
   /* ================================================= TASK DRAWER */
-  taskDrawer() {
+  taskDrawer(agentId, prefill = {}) {
     if (!this.state.agents.length) return this.toast('Create an agent first.', 'err');
-    this.drawer('Assign work', `
+    const pick = agentId || (this.state.agents[0] || {}).id;
+    this.drawer(prefill.title ? 'Run it again' : 'Assign work', `
       <label class="f"><span>What needs doing</span>
-        <input id="t-title" placeholder="e.g. Summarise every PDF in my Reports folder"></label>
+        <input id="t-title" value="${esc(prefill.title || '')}" placeholder="e.g. Summarise every PDF in my Reports folder"></label>
       <label class="f"><span>The brief</span>
-        <textarea id="t-brief" rows="7" placeholder="Everything the agent needs: where the files are, what good looks like, what to produce. Detail here is what separates a task that gets done from one that gets escalated back to you."></textarea></label>
+        <textarea id="t-brief" rows="7" placeholder="Everything the agent needs: where the files are, what good looks like, what to produce. Detail here is what separates a task that gets done from one that gets escalated back to you.">${esc(prefill.brief || '')}</textarea></label>
       <div class="row">
         <label class="f"><span>Assign to</span>
           <select id="t-agent">${this.state.agents.map(a =>
-            `<option value="${a.id}">${esc(a.emoji)} ${esc(a.name)} — ${esc(a.role || 'generalist')}</option>`).join('')}</select></label>
+            `<option value="${a.id}"${a.id === pick ? ' selected' : ''}>${esc(a.emoji)} ${esc(a.name)} — ${esc(a.role || 'generalist')}</option>`).join('')}</select></label>
         <label class="f"><span>Priority</span>
           <select id="t-priority">
-            <option value="high">High — jump the queue</option>
-            <option value="normal" selected>Normal</option>
-            <option value="low">Low — whenever</option>
+            ${['high', 'normal', 'low'].map(v => `<option value="${v}"${
+              v === (prefill.priority || 'normal') ? ' selected' : ''}>${
+              { high: 'High — jump the queue', normal: 'Normal', low: 'Low — whenever' }[v]}</option>`).join('')}
           </select></label>
       </div>
       <label class="cap" style="cursor:pointer">
@@ -1624,6 +1715,12 @@ function val(id) { return document.getElementById(id)?.value.trim() ?? ''; }
 function fmtN(n) { return n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n); }
 function shortModel(m) { return String(m || '').length > 22 ? m.slice(0, 20) + '…' : m; }
 function time(ts) { return new Date(ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }); }
+function dur(seconds) {
+  const s = Math.max(0, Math.round(seconds));
+  if (s < 60) return s + 's';
+  if (s < 3600) return Math.floor(s / 60) + 'm ' + String(s % 60).padStart(2, '0') + 's';
+  return Math.floor(s / 3600) + 'h ' + String(Math.floor((s % 3600) / 60)).padStart(2, '0') + 'm';
+}
 function rel(ts) {
   if (!ts) return '—';
   const d = Date.now() / 1000 - ts;

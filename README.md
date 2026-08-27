@@ -16,7 +16,7 @@ quality gate checks what it actually did before it is allowed to call anything f
 [![Python](https://img.shields.io/badge/Python-3.9%2B-5C6CF2?style=for-the-badge&labelColor=0B0E1D)](https://python.org)
 [![Dependencies](https://img.shields.io/badge/Dependencies-zero-4FD1A5?style=for-the-badge&labelColor=0B0E1D)](#why-zero-dependencies)
 [![Offline](https://img.shields.io/badge/Runs-fully%20offline-A87CF0?style=for-the-badge&labelColor=0B0E1D)](#pick-a-brain-ai-backends)
-[![Tests](https://img.shields.io/badge/Tests-42%20passing-4FD1A5?style=for-the-badge&labelColor=0B0E1D)](#verification)
+[![Tests](https://img.shields.io/badge/Tests-46%20passing-4FD1A5?style=for-the-badge&labelColor=0B0E1D)](#verification)
 
 <br>
 
@@ -128,6 +128,10 @@ implements it if you want to change how it works.
 | Hand a subtask to a colleague | The agent calls `delegate` | [`runtime/tools.py`](hermes/runtime/tools.py) · `t_delegate` |
 | Stop a run in flight | **Stop** on the task card | [`runtime/engine.py`](hermes/runtime/engine.py) · `cancel` |
 | Retry failures automatically | On by default, twice | [`runtime/workforce.py`](hermes/runtime/workforce.py) · `max_attempts` |
+| Run the same brief again | **↻** on any finished task card | [`web/app.js`](hermes/web/app.js) · `rerun` |
+| Find a task in a long board | The filter box above the board | [`web/app.js`](hermes/web/app.js) · `paintBoard` |
+| See the board from a terminal | `hermes tasks` | [`__main__.py`](hermes/__main__.py) · `cmd_tasks` |
+| Know how long a run has been going | The ◷ clock on the card, ticking live | [`web/app.js`](hermes/web/app.js) · `dur` |
 | Work without a browser | `hermes shell` | [`shell.py`](hermes/shell.py) |
 
 ### Controlling what agents can touch
@@ -287,6 +291,7 @@ agent is never even told it exists.
 | Group | Tools |
 |---|---|
 | **Filesystem** | `read_file` `list_dir` `search_files` `write_file` |
+| | `read_file` takes `from_line` / `max_lines` for a big file; `list_dir` takes `depth` to see a whole tree in one call; `search_files` takes a glob like `*.md` to search names |
 | **System** | `run_shell` |
 | **Network** | `http_fetch` |
 | **Email** | `email_list` `email_read` `email_search` `email_draft` `email_send` |
@@ -560,6 +565,7 @@ hermes serve --host 0.0.0.0 --i-understand-the-risk
 | `hermes shell` | Interactive terminal console |
 | `hermes run <agent> "<task>"` | Assign one task and stream it |
 | `hermes run <agent> "<task>" --yes` | …approving tool calls as they come up |
+| `hermes tasks` | Show the board — queued, running, finished, and what is waiting on you |
 | `hermes agents` | List agents and their capabilities |
 | `hermes doctor` | Check backends, keys and configuration |
 | `hermes key <provider>` | Store an API key, encrypted |
@@ -690,7 +696,7 @@ python3 tests/test_hermes.py
 ```
 
 ```
-Ran 42 tests in 1.1s
+Ran 46 tests in 1.1s
 
 OK
 ```

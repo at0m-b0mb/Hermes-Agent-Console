@@ -3,6 +3,50 @@
 All notable changes to Hermes are recorded here.
 This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] — 2026-08-26
+
+Features aimed at the two things that were actually painful in use: not knowing what a
+run was doing, and small models fighting the tools.
+
+### You can see what a run is doing
+
+- **A live elapsed clock** on every running task and run row, ticking each second. A run
+  that has been going twenty minutes and one that started ten seconds ago used to look
+  identical, and that difference is the whole question you are asking when you look at
+  the board.
+- **A "waiting on you" badge** on any run blocked on your approval — the reason a run
+  looks frozen is usually you, and nothing said so.
+- **`hermes tasks`** shows the same board from a terminal, including elapsed time and
+  what is waiting on a decision.
+
+### Less retyping, less scrolling
+
+- **Re-run any finished task** with ↻. It opens the composer prefilled with the original
+  brief, agent and priority — because the reason you re-run something is usually that the
+  brief needed a word changing.
+- **Filter boxes** on the Work board and the Runs list, matching title, brief, agent,
+  model and status. The board filter survives the six-second auto-refresh instead of
+  eating what you were typing.
+
+### Tools that small models can actually use
+
+- **`read_file` takes `from_line` and `max_lines`.** A big file used to be a flat refusal,
+  which left the model with nowhere to go — it would usually just call the same thing
+  again. The error now tells it how to ask for a slice, and the response says which lines
+  it got and how many remain.
+- **`list_dir` takes `depth`.** Walking a tree one call per directory burns a step limit
+  fast, and small models do exactly that.
+- **Numeric arguments accept strings**, because models send `"3"` about half the time.
+
+### The console cannot ship broken
+
+- **CI now runs `node --check` on the console.** It is a single plain script tag with no
+  build step, so one stray bracket takes the whole UI down while every Python check still
+  passes. That happened while building this release; the check would have caught it in
+  seconds, and now it does.
+
+---
+
 ## [1.2.0] — 2026-08-26
 
 Found by running the published build end to end against a local model — a fresh
@@ -184,6 +228,7 @@ the fix.
   requires a real file on disk before taking that branch. A CI job runs the installer
   through a pipe on every push.
 
+[1.3.0]: https://github.com/at0m-b0mb/Hermes-Agent-Console/releases/tag/v1.3.0
 [1.2.0]: https://github.com/at0m-b0mb/Hermes-Agent-Console/releases/tag/v1.2.0
 [1.1.0]: https://github.com/at0m-b0mb/Hermes-Agent-Console/releases/tag/v1.1.0
 [1.0.0]: https://github.com/at0m-b0mb/Hermes-Agent-Console/releases/tag/v1.0.0

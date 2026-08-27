@@ -250,6 +250,41 @@ class ToolArguments(unittest.TestCase):
         """Every non-reply send used to be rejected for a missing thread id."""
         self.assertNotIn("in_reply_to", tools.BY_NAME["email_send"]["required"])
 
+    def test_numbers_may_arrive_as_strings(self):
+        """Models send "3" about half the time."""
+        big = WORK / "app" / "many.txt"
+        big.parent.mkdir(parents=True, exist_ok=True)
+        big.write_text("\n".join(f"line {i}" for i in range(1, 51)))
+        out = tools.t_read_file(agent(), {"path": str(big), "from_line": "10",
+                                          "max_lines": "3"}, {})
+        self.assertIn("line 10", out)
+        self.assertIn("line 12", out)
+        self.assertNotIn("line 13", out)
+        self.assertIn("lines 10-12 of 50", out)
+
+    def test_a_bad_number_says_so(self):
+        big = WORK / "app" / "many.txt"
+        big.parent.mkdir(parents=True, exist_ok=True)
+        big.write_text("one\ntwo\n")
+        with self.assertRaises(tools.ToolError) as caught:
+            tools.t_read_file(agent(), {"path": str(big), "from_line": "seven"}, {})
+        self.assertIn("whole number", str(caught.exception))
+
+    def test_reading_past_the_end_is_an_error_not_an_empty_string(self):
+        small = WORK / "app" / "small.txt"
+        small.parent.mkdir(parents=True, exist_ok=True)
+        small.write_text("only one line\n")
+        with self.assertRaises(tools.ToolError):
+            tools.t_read_file(agent(), {"path": str(small), "from_line": 99}, {})
+
+    def test_list_dir_depth_reaches_subfolders(self):
+        (WORK / "tree" / "deep").mkdir(parents=True, exist_ok=True)
+        (WORK / "tree" / "deep" / "buried.txt").write_text("x")
+        shallow = tools.t_list_dir(agent(), {"path": str(WORK / "tree")}, {})
+        self.assertNotIn("buried.txt", shallow, "depth 1 must not descend")
+        deep = tools.t_list_dir(agent(), {"path": str(WORK / "tree"), "depth": 3}, {})
+        self.assertIn("buried.txt", deep)
+
     def test_missing_genuinely_required_argument_is_reported(self):
         with self.assertRaises(tools.ToolError) as caught:
             tools.execute(agent(), "read_file", {}, {})

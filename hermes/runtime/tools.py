@@ -74,13 +74,47 @@ def _check_host(agent: dict, url: str) -> str:
 
 # -------------------------------------------------------------------- tools
 
+def _int_arg(args, key, default=None):
+    """Models send numbers as strings about half the time."""
+    raw = args.get(key, default)
+    if raw is None or raw == "":
+        return default
+    try:
+        return int(str(raw).strip())
+    except ValueError:
+        raise ToolError(f"'{key}' must be a whole number, got {raw!r}") from None
+
+
 def t_read_file(agent, args, ctx):
     p = _safe_path(agent, args["path"])
     if not p.is_file():
         raise ToolError(f"Not a file: {p}")
-    if p.stat().st_size > 400_000:
-        raise ToolError(f"File too large ({p.stat().st_size} bytes). Read a smaller file.")
-    return p.read_text(errors="replace")
+
+    start = _int_arg(args, "from_line")
+    count = _int_arg(args, "max_lines")
+    size = p.stat().st_size
+
+    # Refusing outright left the model with nowhere to go, and it would usually
+    # try the same call again. Tell it how to ask for a slice instead.
+    if size > 400_000 and not (start or count):
+        raise ToolError(
+            f"File too large to read whole ({size} bytes). Read part of it: "
+            f"call read_file again with from_line and max_lines, "
+            f'e.g. {{"path": "{args["path"]}", "from_line": 1, "max_lines": 400}}.')
+
+    text = p.read_text(errors="replace")
+    if not (start or count):
+        return text
+
+    lines = text.splitlines()
+    start = max(1, start or 1)
+    count = max(1, min(count or 500, 5000))
+    slice_ = lines[start - 1:start - 1 + count]
+    if not slice_:
+        raise ToolError(f"{p} has {len(lines)} lines; line {start} is past the end.")
+    end = start + len(slice_) - 1
+    more = f" · {len(lines) - end} more line(s) after this" if end < len(lines) else " · end of file"
+    return f"[{p} lines {start}-{end} of {len(lines)}{more}]\n" + "\n".join(slice_)
 
 
 def t_write_file(agent, args, ctx):
@@ -95,12 +129,39 @@ def t_list_dir(agent, args, ctx):
     p = _safe_path(agent, args.get("path", "."))
     if not p.is_dir():
         raise ToolError(f"Not a directory: {p}")
-    rows = []
-    for item in sorted(p.iterdir())[:300]:
-        kind = "dir " if item.is_dir() else "file"
-        size = "" if item.is_dir() else f"  {item.stat().st_size}b"
-        rows.append(f"{kind}  {item.name}{size}")
-    return f"{p}\n" + ("\n".join(rows) or "(empty)")
+
+    # Walking a tree one call per directory burns a step limit fast, and small
+    # models do exactly that. One call can see the whole shape instead.
+    depth = max(1, min(_int_arg(args, "depth", 1) or 1, 5))
+    rows, truncated = [], False
+
+    def walk(d: Path, level: int, prefix: str) -> None:
+        nonlocal truncated
+        if truncated:
+            return
+        try:
+            items = sorted(d.iterdir(), key=lambda i: (i.is_file(), i.name.lower()))
+        except OSError:
+            return
+        for item in items:
+            if len(rows) >= 400:
+                truncated = True
+                return
+            if item.is_dir():
+                rows.append(f"dir   {prefix}{item.name}/")
+                if level < depth and not item.name.startswith((".", "__")):
+                    walk(item, level + 1, prefix + item.name + "/")
+            else:
+                try:
+                    rows.append(f"file  {prefix}{item.name}  {item.stat().st_size}b")
+                except OSError:
+                    rows.append(f"file  {prefix}{item.name}")
+
+    walk(p, 1, "")
+    body = "\n".join(rows) or "(empty)"
+    if truncated:
+        body += "\n… (truncated at 400 entries — list a subdirectory instead)"
+    return f"{p}\n{body}"
 
 
 def t_search_files(agent, args, ctx):
@@ -280,11 +341,13 @@ def t_finish(agent, args, ctx):
 
 SPECS = [
     {"name": "read_file", "fn": t_read_file, "required": ["path"], "group": "Filesystem", "danger": "low",
-     "desc": "Read a text file inside your filesystem scope.",
-     "params": {"path": "path to the file"}},
+     "desc": "Read a text file. Add from_line and max_lines to read part of a big one.",
+     "params": {"path": "path to the file", "from_line": "first line, 1-based",
+                "max_lines": "how many lines to return"}},
     {"name": "list_dir", "fn": t_list_dir, "required": [], "group": "Filesystem", "danger": "low",
-     "desc": "List the contents of a directory.",
-     "params": {"path": "directory path (default '.')"}},
+     "desc": "List a directory. Pass depth to see subfolders in the same call.",
+     "params": {"path": "directory path (default '.')",
+                "depth": "how many levels deep, 1-5 (default 1)"}},
     {"name": "search_files", "fn": t_search_files, "required": ["query"], "group": "Filesystem", "danger": "low",
      "desc": "Find files under a directory. A plain query searches file contents and "
              "names; a glob like '*.md' searches names only.",

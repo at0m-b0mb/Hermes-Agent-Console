@@ -619,3 +619,23 @@ kbd {
 .kbd-btn kbd { background: none; border: 0; padding: 0; font-size: 11px; }
 
 @media (max-width: 900px) { .kbd-btn span { display: none; } }
+
+/* A run's elapsed clock. Tabular figures so the seconds do not jitter. */
+.live-t {
+  font-family: var(--mono); font-size: 11px; color: var(--gold-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Filter box above a long list. */
+.filter {
+  display: flex; align-items: center; gap: 9px; margin-bottom: 14px;
+  padding: 0 12px; height: 36px; border-radius: var(--r-sm);
+  border: 1px solid var(--line); background: var(--surface-2);
+}
+.filter span { color: var(--muted); font-size: 13px; }
+.filter input {
+  flex: 1; background: none; border: 0; outline: none; min-width: 0;
+  color: var(--text); font-family: var(--font); font-size: 13px;
+}
+.filter input::placeholder { color: var(--muted); }
+.filter .count { margin-left: auto; }

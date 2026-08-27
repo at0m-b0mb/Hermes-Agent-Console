@@ -218,6 +218,53 @@ def _approvals_on_the_terminal(pending, done, args) -> None:
         print(f"  {GREEN if ok else RED}{'approved' if ok else 'denied'}{OFF}")
 
 
+def cmd_tasks(args) -> int:
+    """The board, for people who are already in a terminal."""
+    db.init()
+    _seed()
+    agents = {a["id"]: a for a in db.q("SELECT id,name,emoji FROM agents")}
+    running = {r["task_id"]: r for r in db.q("SELECT * FROM runs WHERE status='running'")}
+    waiting = {a["run_id"] for a in db.q("SELECT run_id FROM approvals WHERE state='pending'")}
+
+    groups = [("In progress", ["running"], INDIGO),
+              ("Queued", ["queued"], GOLD),
+              ("Needs attention", ["failed", "incomplete", "halted", "cancelled"], RED),
+              ("Completed", ["done"], GREEN)]
+    rows = db.q("SELECT * FROM tasks ORDER BY created_at DESC LIMIT ?", (int(args.limit),))
+    if not rows:
+        print(f"\n  {DIM}Nothing on the board. Assign something with "
+              f"`hermes run <agent> \"<task>\"`.{OFF}\n")
+        return 0
+
+    print()
+    for label, states, colour in groups:
+        items = [t for t in rows if t["status"] in states]
+        if not items:
+            continue
+        print(f"  {colour}{BOLD}{label}{OFF} {DIM}· {len(items)}{OFF}")
+        for t in items:
+            a = agents.get(t["agent_id"], {})
+            bits = [f"{a.get('emoji', '')} {a.get('name', 'unassigned')}".strip()]
+            if t["priority"] == "high":
+                bits.append(f"{GOLD}high{OFF}")
+            if t["attempts"]:
+                bits.append(f"attempt {t['attempts'] + 1}")
+            run = running.get(t["id"])
+            if run:
+                mins = int((db.now() - run["started_at"]) // 60)
+                bits.append(f"{mins}m" if mins else "just started")
+                if run["id"] in waiting:
+                    bits.append(f"{GOLD}waiting on you{OFF}")
+            print(f"    {t['title'][:62]:<64}{DIM}{' · '.join(bits)}{OFF}")
+        print()
+
+    pending = len(waiting)
+    if pending:
+        print(f"  {GOLD}{pending} approval(s) waiting.{OFF} "
+              f"{DIM}Open the console, or run the task from here to be asked.{OFF}\n")
+    return 0
+
+
 def cmd_run(args) -> int:
     db.init()
     _seed()
@@ -312,6 +359,10 @@ def main(argv=None) -> int:
 
     a = sub.add_parser("agents", help="list agents and their capabilities")
     a.set_defaults(fn=cmd_agents)
+
+    tk = sub.add_parser("tasks", help="show the board: queued, running and finished work")
+    tk.add_argument("--limit", type=int, default=40)
+    tk.set_defaults(fn=cmd_tasks)
 
     r = sub.add_parser("run", help="assign a task to an agent from the terminal")
     r.add_argument("agent")

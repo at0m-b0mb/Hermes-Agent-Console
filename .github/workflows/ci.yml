@@ -28,6 +28,27 @@ jobs:
       - name: Run the suite
         run: python tests/test_hermes.py
 
+  console:
+    name: console · javascript syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The console is one plain script tag with no build step, so a single
+      # stray bracket takes the entire UI down and every Python check still
+      # passes. This is the only thing standing between a typo and a blank
+      # page, so it runs on its own.
+      - name: node --check the console
+        run: |
+          node --check hermes/web/app.js
+          echo "app.js parses"
+
+      - name: the page still wires up its own assets
+        run: |
+          grep -q 'src="/app.js' hermes/web/index.html
+          grep -q 'href="/styles.css' hermes/web/index.html
+          echo "index.html references both assets"
+
   installer:
     name: installer · shellcheck + cold install
     runs-on: ubuntu-latest
