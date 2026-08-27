@@ -694,8 +694,6 @@ class RequestCeilings(unittest.TestCase):
 
 class Packaging(unittest.TestCase):
 
-    @unittest.skipUnless(hasattr(sys, "stdlib_module_names"),
-                         "sys.stdlib_module_names needs Python 3.10+")
     def test_no_fstring_spans_a_line(self):
         """A line break inside an f-string replacement field is Python 3.12+.
 
@@ -744,6 +742,8 @@ class Packaging(unittest.TestCase):
             i += 1
         return False
 
+    @unittest.skipUnless(hasattr(sys, "stdlib_module_names"),
+                         "sys.stdlib_module_names needs Python 3.10+")
     def test_no_third_party_imports(self):
         """Zero dependencies is a promise; assert it rather than trust it."""
         import ast
